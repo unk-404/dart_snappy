@@ -139,8 +139,9 @@ class SnappyFramingEncoder extends Converter<List<int>, List<int>> {
 /// Streaming decoder for the Snappy framing format.
 ///
 /// Accepts arbitrary slices of a framed stream and emits decoded bytes as soon
-/// as a whole chunk is available. [`close`] verifies that the stream did not
-/// end in the middle of a chunk and that a stream identifier was present.
+/// as a whole chunk is available. Calling `close()` verifies that the stream
+/// did not end in the middle of a chunk and that a stream identifier was
+/// present.
 class SnappyFramingDecoder extends Converter<List<int>, List<int>> {
   /// Creates a framing decoder.
   const SnappyFramingDecoder();
