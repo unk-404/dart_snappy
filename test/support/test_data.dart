@@ -11,10 +11,12 @@ class XorShift32 {
 
   int nextUint32() {
     var x = _state;
-    x ^= (x << 13) & 0xFFFFFFFF;
-    x ^= x >> 17;
-    x ^= (x << 5) & 0xFFFFFFFF;
-    _state = x & 0xFFFFFFFF;
+    // Unsigned shifts keep the sequence identical on the VM and on the web,
+    // where integers are doubles and `>>` sign-extends int32 values.
+    x = (x ^ (x << 13)) & 0xFFFFFFFF;
+    x = (x ^ (x >>> 17)) & 0xFFFFFFFF;
+    x = (x ^ (x << 5)) & 0xFFFFFFFF;
+    _state = x;
     return _state;
   }
 
@@ -96,7 +98,7 @@ Uint8List varint(int value) {
   var v = value;
   while (v >= 0x80) {
     out.add((v & 0x7F) | 0x80);
-    v >>= 7;
+    v >>>= 7;
   }
   out.add(v);
   return Uint8List.fromList(out);

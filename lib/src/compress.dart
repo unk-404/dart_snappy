@@ -6,6 +6,9 @@ import 'dart:typed_data';
 import 'format.dart';
 import 'varint.dart';
 
+/// `kMagic` from the reference implementation.
+const int _hashMagic = 0x1e35a7bd;
+
 /// Reusable scratch table for the match finder.
 ///
 /// The library is synchronous and never calls back into user code while
@@ -27,6 +30,13 @@ Uint8List _buildLowestBitTable() {
   }
   return table;
 }
+
+/// Hash table slot for the 32-bit little-endian word [word].
+///
+/// Mirrors the reference implementation's quick-and-dirty hash: it keeps bits
+/// 18..31 of `kMagic * word`, i.e. the high bits of the 32-bit product.
+@pragma('vm:prefer-inline')
+int _hash(int word) => ((_hashMagic * word) >> 18) & (hashTableSize - 1);
 
 /// Compresses [source] into a newly allocated [Uint8List].
 Uint8List compressBlock(Uint8List source) {
@@ -87,7 +97,8 @@ int _compressBlock(
     return op;
   }
 
-  _hashTable.fillRange(0, hashTableSize, 0);
+  final Uint16List table = _hashTable;
+  table.fillRange(0, hashTableSize, 0);
 
   final int limit = end - inputMarginBytes;
   var nextEmit = base;
@@ -99,8 +110,8 @@ int _compressBlock(
     var candidate = 0;
     var skip = 32;
     while (true) {
-      final int slot = hashSlot(data);
-      final int found = base + _hashTable[slot];
+      final int slot = _hash(data);
+      final int found = base + table[slot];
       final int step = skip >> 5;
       skip += step;
       final int nextIp = ip + step;
@@ -110,7 +121,7 @@ int _compressBlock(
         }
         return op;
       }
-      _hashTable[slot] = ip - base;
+      table[slot] = ip - base;
       if (sourceData.getUint32(found, Endian.little) == data) {
         candidate = found;
         break;
@@ -134,11 +145,10 @@ int _compressBlock(
         return op;
       }
       final int next = sourceData.getUint32(ip, Endian.little);
-      _hashTable[hashSlot(sourceData.getUint32(ip - 1, Endian.little))] =
-          ip - base - 1;
-      final int slot = hashSlot(next);
-      candidate = base + _hashTable[slot];
-      _hashTable[slot] = ip - base;
+      table[_hash(sourceData.getUint32(ip - 1, Endian.little))] = ip - base - 1;
+      final int slot = _hash(next);
+      candidate = base + table[slot];
+      table[slot] = ip - base;
       if (next != sourceData.getUint32(candidate, Endian.little)) {
         data = next;
         break;
@@ -152,6 +162,7 @@ int _compressBlock(
 
 /// Number of bytes that match between `data[a, ...)` and `data[b, ...)`, never
 /// reaching [limit] for the `b` side.
+@pragma('vm:prefer-inline')
 int _matchLength(ByteData data, int a, int b, int limit) {
   final int start = b;
   while (b + 4 <= limit) {
@@ -172,12 +183,14 @@ int _matchLength(ByteData data, int a, int b, int limit) {
 }
 
 /// Index of the lowest set bit of [value], which must be in `1..0xFFFFFFFF`.
+@pragma('vm:prefer-inline')
 int _lowestSetBit(int value) {
+  final Uint8List lookup = _lowestBit;
   var shift = 0;
   var v = value;
   while (true) {
     final int byte = v & 0xFF;
-    if (byte != 0) return shift + _lowestBit[byte];
+    if (byte != 0) return shift + lookup[byte];
     v >>= 8;
     shift += 8;
   }
@@ -218,6 +231,7 @@ int _emitLiteral(
 }
 
 /// Emits a copy of [length] bytes at [offset] bytes back.
+@pragma('vm:prefer-inline')
 int _emitCopy(ByteData destination, int op, int offset, int length) {
   assert(length >= 4 && offset > 0 && offset < blockSize);
   if (length < 12) {
@@ -236,6 +250,7 @@ int _emitCopy(ByteData destination, int op, int offset, int length) {
 }
 
 /// Emits one copy tag for `4 <= length <= 64`.
+@pragma('vm:prefer-inline')
 int _emitCopyAtMost64(
   ByteData destination,
   int op,

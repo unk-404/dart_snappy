@@ -1,3 +1,6 @@
+@TestOn('vm')
+library;
+
 import 'dart:io';
 
 import 'package:snappy_neo/snappy_neo.dart';
@@ -21,10 +24,9 @@ void main() {
     );
   });
 
-  for (final fixture
-      in directory.listSync().whereType<File>().where(
-        (file) => file.path.endsWith('.snappy'),
-      )) {
+  for (final fixture in directory.listSync().whereType<File>().where(
+    (file) => file.path.endsWith('.snappy'),
+  )) {
     final name = fixture.uri.pathSegments.last.replaceAll('.snappy', '');
     final source = File('testdata/corpus/$name');
     test('decodes the reference stream for $name', () {

@@ -8,7 +8,7 @@ import 'varint.dart';
 
 /// Reads the uncompressed length from the header of a Snappy block stream.
 ///
-/// The whole stream is not validated; use [decompress] for that.
+/// The whole stream is not validated; use [decompressBlock] for that.
 int uncompressedLengthFrom(Uint8List source) {
   final (value, _) = readVarint(source, 0);
   return value;
@@ -35,13 +35,13 @@ int decompressBlockInto(Uint8List source, Uint8List destination) {
       'must be at least the uncompressed length ($expected)',
     );
   }
-  final int overCopy = destination.length - expected;
+  final int spare = destination.length - expected;
   decodeBlock(
     source,
     headerLength,
     destination,
     expected,
-    overCopy < 8 ? overCopy : 8,
+    spare < outputSlop ? spare : outputSlop,
   );
   return expected;
 }
@@ -61,6 +61,7 @@ int decodeBlock(
 ) {
   final int sourceLength = source.length;
   final int writeLimit = outputLength + overCopy;
+  final ByteData sourceData = ByteData.sublistView(source);
   final ByteData destinationData = ByteData.sublistView(destination);
   var ip = offset;
   var op = 0;
@@ -82,7 +83,9 @@ int decodeBlock(
         }
         var value = 0;
         for (var i = 0; i < lengthBytes; i++) {
-          value |= source[ip + i] << (i << 3);
+          // Multiplication instead of `<<`: Dart web integers are doubles and
+          // a 32-bit shift would drop the high length bits.
+          value += source[ip + i] * (1 << (i << 3));
         }
         length = value + 1;
         ip += lengthBytes;
@@ -94,7 +97,17 @@ int decodeBlock(
       if (ip + length > sourceLength) {
         throw const FormatException('snappy: truncated literal');
       }
-      destination.setRange(op, end, source, ip);
+      if (length <= 4 && ip + 4 <= sourceLength && op + 4 <= writeLimit) {
+        // Most literals in real data are 1-3 bytes; one 32-bit store is
+        // cheaper than a range copy.
+        destinationData.setUint32(
+          op,
+          sourceData.getUint32(ip, Endian.little),
+          Endian.little,
+        );
+      } else {
+        destination.setRange(op, end, source, ip);
+      }
       op = end;
       ip += length;
       continue;
@@ -123,10 +136,10 @@ int decodeBlock(
         throw const FormatException('snappy: truncated copy offset');
       }
       copyOffset =
-          source[ip] |
-          (source[ip + 1] << 8) |
-          (source[ip + 2] << 16) |
-          (source[ip + 3] << 24);
+          source[ip] +
+          (source[ip + 1] << 8) +
+          (source[ip + 2] << 16) +
+          source[ip + 3] * 0x1000000;
       ip += 4;
     }
     if (copyOffset == 0 || copyOffset > op) {
@@ -137,6 +150,81 @@ int decodeBlock(
     final int end = op + length;
     if (end > outputLength) {
       throw const FormatException('snappy: copy overruns the output');
+    }
+
+    // Fast paths for the tag shapes that dominate real streams: offsets of at
+    // least 8 are copied in 8-byte granules, offsets of 4..7 in 4-byte ones.
+    // Both may write past the logical end, hence [writeLimit].
+    if (copyOffset >= 8) {
+      if (length <= 16 && op + 16 <= writeLimit) {
+        final int from = op - copyOffset;
+        destinationData.setUint32(
+          op,
+          destinationData.getUint32(from, Endian.little),
+          Endian.little,
+        );
+        destinationData.setUint32(
+          op + 4,
+          destinationData.getUint32(from + 4, Endian.little),
+          Endian.little,
+        );
+        if (length > 8) {
+          destinationData.setUint32(
+            op + 8,
+            destinationData.getUint32(from + 8, Endian.little),
+            Endian.little,
+          );
+          destinationData.setUint32(
+            op + 12,
+            destinationData.getUint32(from + 12, Endian.little),
+            Endian.little,
+          );
+        }
+        op = end;
+        continue;
+      }
+      copyFromOutput(
+        destination,
+        destinationData,
+        op,
+        copyOffset,
+        length,
+        writeLimit,
+      );
+      op = end;
+      continue;
+    }
+    if (copyOffset >= 4) {
+      if (length <= 8 && op + 8 <= writeLimit) {
+        final int from = op - copyOffset;
+        destinationData.setUint32(
+          op,
+          destinationData.getUint32(from, Endian.little),
+          Endian.little,
+        );
+        destinationData.setUint32(
+          op + 4,
+          destinationData.getUint32(from + 4, Endian.little),
+          Endian.little,
+        );
+        op = end;
+        continue;
+      }
+      copyFromOutput(
+        destination,
+        destinationData,
+        op,
+        copyOffset,
+        length,
+        writeLimit,
+      );
+      op = end;
+      continue;
+    }
+    if (copyOffset == 1) {
+      destination.fillRange(op, end, destination[op - 1]);
+      op = end;
+      continue;
     }
     copyFromOutput(
       destination,
@@ -173,6 +261,60 @@ void copyFromOutput(
   int writeLimit,
 ) {
   final int source = op - offset;
+
+  if (offset >= 16) {
+    var s = source;
+    var d = op;
+    var remaining = length;
+    while (remaining >= 16) {
+      data.setUint32(d, data.getUint32(s, Endian.little), Endian.little);
+      data.setUint32(
+        d + 4,
+        data.getUint32(s + 4, Endian.little),
+        Endian.little,
+      );
+      data.setUint32(
+        d + 8,
+        data.getUint32(s + 8, Endian.little),
+        Endian.little,
+      );
+      data.setUint32(
+        d + 12,
+        data.getUint32(s + 12, Endian.little),
+        Endian.little,
+      );
+      d += 16;
+      s += 16;
+      remaining -= 16;
+    }
+    if (remaining == 0) return;
+    if (remaining >= 8) {
+      data.setUint32(d, data.getUint32(s, Endian.little), Endian.little);
+      data.setUint32(
+        d + 4,
+        data.getUint32(s + 4, Endian.little),
+        Endian.little,
+      );
+      d += 8;
+      s += 8;
+      remaining -= 8;
+    }
+    if (remaining == 0) return;
+    if (d + 8 <= writeLimit) {
+      data.setUint32(d, data.getUint32(s, Endian.little), Endian.little);
+      data.setUint32(
+        d + 4,
+        data.getUint32(s + 4, Endian.little),
+        Endian.little,
+      );
+      return;
+    }
+    while (remaining > 0) {
+      output[d++] = output[s++];
+      remaining--;
+    }
+    return;
+  }
 
   if (offset >= 8) {
     var s = source;

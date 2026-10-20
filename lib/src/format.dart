@@ -28,9 +28,6 @@ const int outputSlop = 64;
 /// Largest uncompressed length a block-format stream can describe (2^32 - 1).
 const int maxUncompressedLength = 0xFFFFFFFF;
 
-/// Hash multiplier from the reference implementation (`kMagic`).
-const int _hashMagic = 0x1e35a7bd;
-
 /// Upper bound on the compressed size of [sourceBytes] input bytes.
 ///
 /// The bound is the one used by the reference implementation: worst case is a
@@ -41,14 +38,4 @@ int maxCompressedLength(int sourceBytes) {
     throw RangeError.value(sourceBytes, 'sourceBytes');
   }
   return 32 + sourceBytes + sourceBytes ~/ 6;
-}
-
-/// Hash table slot for the 32-bit little-endian word [word].
-///
-/// Mirrors the reference implementation's quick-and-dirty hash: the high bits
-/// of `kMagic * word` are a better hash than the low bits, so the result is
-/// shifted down and then masked.
-int hashSlot(int word) {
-  final int product = (_hashMagic * word) & 0xFFFFFFFF;
-  return ((product >> (31 - hashTableBits)) >> 1) & (hashTableSize - 1);
 }

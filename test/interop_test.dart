@@ -1,3 +1,6 @@
+@TestOn('vm')
+library;
+
 import 'dart:io';
 
 import 'package:snappy_neo/snappy_neo.dart';
@@ -47,7 +50,9 @@ void main() {
       reference.path,
     ]);
     if (generated.exitCode != 0) {
-      fail('snappy-oracle gen failed:\n${generated.stdout}\n${generated.stderr}');
+      fail(
+        'snappy-oracle gen failed:\n${generated.stdout}\n${generated.stderr}',
+      );
     }
 
     // Dart streams, one per corpus file.
@@ -84,7 +89,8 @@ void main() {
     expect(
       verified.exitCode,
       0,
-      reason: 'snappy-oracle verify failed:\n'
+      reason:
+          'snappy-oracle verify failed:\n'
           '${verified.stdout}\n${verified.stderr}',
     );
   }, skip: skip);

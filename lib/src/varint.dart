@@ -14,7 +14,7 @@ int writeVarint(Uint8List destination, int offset, int value) {
   var o = offset;
   while (v >= 0x80) {
     destination[o++] = (v & 0x7F) | 0x80;
-    v >>= 7;
+    v >>>= 7;
   }
   destination[o++] = v;
   return o;
@@ -33,7 +33,9 @@ int writeVarint(Uint8List destination, int offset, int value) {
       throw const FormatException('snappy: truncated uncompressed length');
     }
     final int byte = source[o++];
-    value |= (byte & 0x7F) << shift;
+    // Multiplication instead of `<<`: Dart web integers are doubles and the
+    // bitwise shift would wrap at 32 bits, losing the top length bits.
+    value += (byte & 0x7F) * (1 << shift);
     if (byte < 0x80) {
       if (value > maxUncompressedLength) {
         throw const FormatException(
