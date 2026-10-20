@@ -20,6 +20,7 @@ void main() {
   final workspace = Directory('build/interop');
   final reference = Directory('${workspace.path}/reference');
   final dart = Directory('${workspace.path}/dart');
+  final dartLevel2 = Directory('${workspace.path}/dart-level2');
 
   List<File> corpusFiles() =>
       corpus
@@ -40,6 +41,7 @@ void main() {
     if (workspace.existsSync()) workspace.deleteSync(recursive: true);
     reference.createSync(recursive: true);
     dart.createSync(recursive: true);
+    dartLevel2.createSync(recursive: true);
 
     // Reference streams, one per corpus file.
     final generated = Process.runSync(oracle!, [
@@ -55,10 +57,13 @@ void main() {
       );
     }
 
-    // Dart streams, one per corpus file.
+    // Dart streams, one per corpus file (level 1 and level 2).
     for (final file in corpusFiles()) {
-      final compressed = Snappy.compress(file.readAsBytesSync());
-      File('${dart.path}/${nameOf(file)}.snappy').writeAsBytesSync(compressed);
+      final source = file.readAsBytesSync();
+      File('${dart.path}/${nameOf(file)}.snappy')
+          .writeAsBytesSync(Snappy.compress(source));
+      File('${dartLevel2.path}/${nameOf(file)}.snappy')
+          .writeAsBytesSync(Snappy.compress(source, level: 2));
     }
   });
 
@@ -91,6 +96,23 @@ void main() {
       0,
       reason:
           'snappy-oracle verify failed:\n'
+          '${verified.stdout}\n${verified.stderr}',
+    );
+  }, skip: skip);
+
+  test('the reference decodes every level 2 Dart stream', () {
+    final verified = Process.runSync(oracle!, [
+      'verify',
+      '--corpus',
+      corpus.path,
+      '--compressed',
+      dartLevel2.path,
+    ]);
+    expect(
+      verified.exitCode,
+      0,
+      reason:
+          'snappy-oracle verify (level 2) failed:\n'
           '${verified.stdout}\n${verified.stderr}',
     );
   }, skip: skip);
