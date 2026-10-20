@@ -1,0 +1,11 @@
+# Keep every checkout byte-identical: benchcat renders deterministic SVG bytes,
+# and the benchmark corpus must hash the same on every platform.
+* text=auto eol=lf
+
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.pdf binary
+*.snappy binary
+*.gtb binary
+*.protodata binary

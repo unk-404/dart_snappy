@@ -6,4 +6,14 @@
 # https://dart.dev/tools/pub/private-files#pubspec-lock.
 pubspec.lock
 
+# Agent / local scratch workspace (never part of the package).
 .agents/
+
+# Build outputs (benchmark corpora, reports, generated charts).
+build/
+
+# Rust oracle build artifacts.
+bench/rust/target/
+
+# Compiled executables.
+*.exe

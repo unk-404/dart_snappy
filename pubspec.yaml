@@ -1,15 +1,22 @@
 name: snappy_neo
-description: A starting point for Dart libraries or applications.
-version: 1.0.0
+description: >-
+  Pure Dart implementation of Google's Snappy compression: fast block-format
+  compress and decompress, with a zero-copy Bytes API powered by blit.
+version: 0.1.0
 # repository: https://github.com/my_org/my_repo
+
+topics:
+  - compression
+  - snappy
+  - codec
 
 environment:
   sdk: ^3.13.5
 
-# Add regular dependencies here.
 dependencies:
-  # path: ^1.9.0
+  blit: ^0.1.4
 
 dev_dependencies:
+  benchmark_test: ^0.1.2
   lints: ^6.0.0
   test: ^1.25.6

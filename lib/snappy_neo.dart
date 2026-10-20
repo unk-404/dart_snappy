@@ -1,8 +1,8 @@
-/// Support for doing something awesome.
+/// Support for Google's Snappy compression format.
 ///
-/// More dartdocs go here.
+/// Pure Dart, no native dependencies. The block ("raw") format is implemented
+/// by [Snappy]; `package:snappy_neo/blit.dart` adds a zero-copy `Bytes` API.
 library;
 
-export 'src/snappy_neo_base.dart';
-
-// TODO: Export any libraries intended for clients of this package.
+export 'src/codec.dart';
+export 'src/snappy.dart';
