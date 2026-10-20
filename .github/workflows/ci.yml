@@ -1,0 +1,176 @@
+name: CI
+
+on:
+  push:
+    # The repository's default branch is currently `master`; `main` is listed
+    # so CI keeps running if the branch is renamed as the contract describes.
+    branches: [master, main]
+  pull_request:
+
+# Least privilege by default; the `bench` job opts into `contents: write` so it
+# can commit the refreshed chart on main.
+permissions:
+  contents: read
+
+jobs:
+  test:
+    name: test (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dart-lang/setup-dart@v1
+        with:
+          sdk: stable
+
+      - name: Install dependencies
+        run: dart pub get
+
+      - name: Analyze
+        run: dart analyze
+
+      - name: Check formatting
+        run: dart format --output=none --set-exit-if-changed .
+
+      - name: Run tests
+        run: dart test
+
+  web:
+    name: web (chrome)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dart-lang/setup-dart@v1
+        with:
+          sdk: stable
+
+      - name: Install dependencies
+        run: dart pub get
+
+      - name: Run browser tests
+        run: dart test -p chrome
+
+  interop:
+    name: interop (rust oracle)
+    needs: test
+    runs-on: ubuntu-latest
+    # The oracle is built in-place, so this job is Ubuntu-only; a Windows
+    # matrix leg would need `snappy-oracle.exe` here.
+    env:
+      SNAPPY_ORACLE: bench/rust/target/release/snappy-oracle
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dart-lang/setup-dart@v1
+        with:
+          sdk: stable
+
+      - name: Install Dart dependencies
+        run: dart pub get
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: bench/rust
+
+      - name: Build the Rust oracle
+        run: cargo build --release --manifest-path bench/rust/Cargo.toml
+
+      - name: Write Dart-compressed streams
+        run: dart run tool/write_dart_compressed.dart testdata/corpus build/bench/dart-compressed
+
+      - name: Verify the Dart streams with the Rust oracle
+        run: $SNAPPY_ORACLE verify --corpus testdata/corpus --compressed build/bench/dart-compressed
+
+      - name: Run interop tests
+        run: dart test test/interop_test.dart
+
+  bench:
+    name: bench (chart)
+    needs: test
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          # The chart commit below must push back to the branch it was built
+          # from, so fetch the full history rather than a shallow tip.
+          fetch-depth: 0
+
+      - uses: dart-lang/setup-dart@v1
+        with:
+          sdk: stable
+
+      - name: Install Dart dependencies
+        run: dart pub get
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: bench/rust
+
+      - name: Build the Rust oracle
+        run: cargo build --release --manifest-path bench/rust/Cargo.toml
+
+      - name: Prepare the build directory
+        run: mkdir -p build/bench
+
+      - name: Benchmark the Dart VM (JIT)
+        run: dart run benchmark_test --output jsonl -c jit bench/dart/snappy_bench.dart > build/bench/dart-jit.jsonl
+
+      - name: Benchmark the native executable (AOT)
+        run: dart run benchmark_test --output jsonl -c aot bench/dart/snappy_bench.dart > build/bench/dart-aot.jsonl
+
+      - name: Convert the JIT results
+        run: dart run tool/bench_report.dart build/bench/dart-jit.jsonl testdata/corpus build/bench/dart-jit.json
+
+      - name: Convert the AOT results
+        run: dart run tool/bench_report.dart build/bench/dart-aot.jsonl testdata/corpus build/bench/dart-aot.json
+
+      - name: Benchmark the Rust oracle
+        run: bench/rust/target/release/snappy-oracle bench --corpus testdata/corpus --out build/bench/rust.json
+
+      - name: Render the comparison card
+        id: benchcat
+        uses: unk-404/benchcat@master
+        with:
+          # `input` is intentionally omitted: benchcat.toml defines the three
+          # [[series]], and the action installs its own CLI.
+          config: benchcat.toml
+          format: auto
+          out: assets/benchmarks.svg
+
+      - name: Check the rendered card
+        run: |
+          test -s assets/benchmarks.svg
+          test "$(head -c 5 assets/benchmarks.svg)" = "<?xml"
+          echo "assets/benchmarks.svg: $(wc -c < assets/benchmarks.svg) bytes"
+
+      - name: Commit the refreshed card
+        if: github.event_name == 'push' && (github.ref == 'refs/heads/master' || github.ref == 'refs/heads/main')
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add assets/benchmarks.svg
+          if git diff --cached --quiet; then
+            echo "benchmark card unchanged"
+          else
+            git commit -m "chore(bench): refresh benchmark card [skip ci]"
+            git push
+          fi
+
+      - name: Upload the rendered card (pull requests)
+        if: github.event_name == 'pull_request'
+        uses: actions/upload-artifact@v4
+        with:
+          name: benchmarks-chart
+          path: assets/benchmarks.svg
+          if-no-files-found: error

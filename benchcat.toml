@@ -1,0 +1,33 @@
+# benchcat card for dart_snappy (snappy_neo).
+#
+# Rendered in CI by `unk-404/benchcat@master` from the canonical
+# `benchcat/report@1` files that the `bench` job in .github/workflows/ci.yml
+# produces:
+#
+#   build/bench/dart-jit.json   benchmark_test -c jit -> tool/bench_report.dart
+#   build/bench/dart-aot.json   benchmark_test -c aot -> tool/bench_report.dart
+#   build/bench/rust.json       snappy-oracle bench (Rust `snap` crate)
+#
+# Determinism: the action carries its own font catalogue, so no font is named
+# here. `enable_system_font` / `enable_guaranteed_font` are deliberately left at
+# their `false` defaults: consulting runner fonts would make the SVG bytes
+# machine-dependent.
+
+[render]
+title = "snappy_neo — Snappy block format"
+subtitle = "{platform} · MiB/s · {rows} rows · higher is better"
+footer = "Dart JIT vs Dart AOT vs Rust snap · rendered by benchcat"
+theme = "pastel"
+width = 920.0
+
+[[series]]
+label = "Dart JIT"
+input = "build/bench/dart-jit.json"
+
+[[series]]
+label = "Dart AOT"
+input = "build/bench/dart-aot.json"
+
+[[series]]
+label = "Rust snap"
+input = "build/bench/rust.json"
