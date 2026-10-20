@@ -637,6 +637,18 @@ void main() {
       expect(codec.encode(source), SnappyFraming.compress(source, level: 2));
       expect(codec.decode(codec.encode(source)), source);
     });
+
+    test('the codec can skip checksum verification', () {
+      final source = textBytes(8000);
+      final framed = SnappyFraming.compress(source);
+      final broken = Uint8List.fromList(framed)..[14] ^= 0x01;
+      const codec = SnappyFramingCodec(verifyChecksums: false);
+      expect(codec.decode(broken), source);
+      expect(
+        () => const SnappyFramingCodec().decode(broken),
+        throwsFormatException,
+      );
+    });
   });
   group('codec', () {
     test('roundtrips through dart:convert', () {

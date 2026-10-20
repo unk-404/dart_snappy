@@ -306,17 +306,21 @@ class SnappyFramingCodec extends Codec<List<int>, List<int>> {
   ///
   /// [level] is 1 (fastest, the default) or 2 (denser and slower); it only
   /// affects encoding.
-  const SnappyFramingCodec({this.level = 1});
+  const SnappyFramingCodec({this.level = 1, this.verifyChecksums = true});
 
   /// Compression level used by [encoder].
   final int level;
+
+  /// Whether [decoder] verifies each chunk's masked CRC-32C.
+  final bool verifyChecksums;
 
   @override
   Converter<List<int>, List<int>> get encoder =>
       SnappyFramingEncoder(level: level);
 
   @override
-  Converter<List<int>, List<int>> get decoder => const SnappyFramingDecoder();
+  Converter<List<int>, List<int>> get decoder =>
+      SnappyFramingDecoder(verifyChecksums: verifyChecksums);
 }
 
 // ---------------------------------------------------------------------------

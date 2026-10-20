@@ -45,5 +45,8 @@ extension SnappyBytesExtension on Bytes {
       Bytes.fromUint8List(SnappyFraming.compress(asUint8List(), level: level));
 
   /// Decompresses this framed view into a new [Uint8List].
-  Uint8List snappyFrameDecompress() => SnappyFraming.decompress(asUint8List());
+  ///
+  /// [verifyChecksums] may be disabled when another layer guarantees integrity.
+  Uint8List snappyFrameDecompress({bool verifyChecksums = true}) =>
+      SnappyFraming.decompress(asUint8List(), verifyChecksums: verifyChecksums);
 }

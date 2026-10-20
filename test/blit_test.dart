@@ -44,11 +44,41 @@ void main() {
       expect(framed.asUint8List(), SnappyFraming.compress(source, level: 2));
       expect(framed.snappyFrameDecompress(), source);
     });
+
+    test('framed decode can skip checksum verification', () {
+      final source = textBytes(5000);
+      final framed = SnappyFraming.compress(source);
+      final broken = Uint8List.fromList(framed)..[14] ^= 0x01;
+      expect(
+        Bytes.fromUint8List(broken)
+            .snappyFrameDecompress(verifyChecksums: false),
+        source,
+      );
+      expect(
+        () => Bytes.fromUint8List(broken).snappyFrameDecompress(),
+        throwsFormatException,
+      );
+    });
     test('round-trips a framed stream', () {
       final source = textBytes(90000);
       final framed = Bytes.fromUint8List(source).snappyFrameCompress();
       expect(framed.length, greaterThan(10));
       expect(framed.snappyFrameDecompress(), source);
+    });
+
+    test('framed decode can skip checksum verification', () {
+      final source = textBytes(5000);
+      final framed = SnappyFraming.compress(source);
+      final broken = Uint8List.fromList(framed)..[14] ^= 0x01;
+      expect(
+        Bytes.fromUint8List(broken)
+            .snappyFrameDecompress(verifyChecksums: false),
+        source,
+      );
+      expect(
+        () => Bytes.fromUint8List(broken).snappyFrameDecompress(),
+        throwsFormatException,
+      );
     });
 
     test('framed views respect the slice offsets', () {
