@@ -2,6 +2,11 @@
 # and the benchmark corpus must hash the same on every platform.
 * text=auto eol=lf
 
+# Reference data must be checked out byte-for-byte as committed: the golden
+# streams were produced from exactly these bytes.
+testdata/corpus/** binary
+testdata/golden/** binary
+
 *.png binary
 *.jpg binary
 *.jpeg binary
