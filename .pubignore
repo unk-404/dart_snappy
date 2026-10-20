@@ -1,9 +1,10 @@
 # Files published to pub.dev. The rest of the repository is development
-# scaffolding: the benchmark corpus and chart inputs are not needed by
+# scaffolding: the benchmark corpus, chart and CI inputs are not needed by
 # consumers and would only bloat the archive.
 
 .agents/
 .github/
+assets/
 bench/
 testdata/
 build/

@@ -46,7 +46,9 @@ abstract final class Snappy {
   /// Compresses [source] into [destination] and returns the byte count.
   ///
   /// [destination] must be at least [maxCompressedLength] of `source.length`
-  /// bytes; [ArgumentError] is thrown otherwise.
+  /// bytes; [ArgumentError] is thrown otherwise. The encoder's fast paths may
+  /// write up to 15 bytes past the returned length (still inside
+  /// [destination]); only the first `returnValue` bytes are meaningful.
   static int compressInto(List<int> source, Uint8List destination) =>
       impl.compressBlockInto(_asBytes(source), destination);
 
@@ -59,8 +61,8 @@ abstract final class Snappy {
   /// Decompresses [source] into [destination] and returns the byte count.
   ///
   /// [destination] must be large enough for the declared uncompressed length;
-  /// [ArgumentError] is thrown otherwise. Writes exactly the declared number of
-  /// bytes.
+  /// [ArgumentError] is thrown otherwise. Exactly the declared number of bytes
+  /// is written: bytes after that point in [destination] are left untouched.
   static int decompressInto(List<int> source, Uint8List destination) =>
       impl.decompressBlockInto(_asBytes(source), destination);
 }

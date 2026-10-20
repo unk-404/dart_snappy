@@ -127,12 +127,16 @@ void main() {
       expect(() => Snappy.compressInto(source, tooSmall), throwsArgumentError);
     });
 
-    test('decompressInto accepts a larger destination', () {
+    test('decompressInto accepts a larger destination and leaves its tail', () {
       final source = textBytes(1000);
       final compressed = Snappy.compress(source);
-      final destination = Uint8List(source.length + 32);
+      final destination = Uint8List(source.length + 32)
+        ..fillRange(0, source.length + 32, 0xAA);
       expect(Snappy.decompressInto(compressed, destination), source.length);
       expect(Uint8List.sublistView(destination, 0, source.length), source);
+      for (var i = source.length; i < destination.length; i++) {
+        expect(destination[i], 0xAA, reason: 'byte $i was over-written');
+      }
     });
 
     test('List<int> input is accepted', () {

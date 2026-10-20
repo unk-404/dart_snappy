@@ -8,7 +8,7 @@
 ///     build/bench/dart-jit.jsonl testdata/corpus build/bench/dart-jit.json
 /// ```
 ///
-/// Mapping (see `.agents/notes/bench-contract.md`):
+/// Mapping (documented in the README's performance section):
 ///
 /// | `benchmark_test` result                 | report row                      |
 /// |-----------------------------------------|---------------------------------|
@@ -318,13 +318,26 @@ String _operatingSystemName() {
 }
 
 /// CPU architecture parsed from `Platform.version` (`... on "windows_x64"`).
+///
+/// Normalised to the spelling `std::env::consts::ARCH` uses in the Rust
+/// oracle report (`x86_64`, `aarch64`, ...), so both sources agree.
 String _architectureName() {
   final match = RegExp(r'''\bon\s+['"]([^'"]+)['"]''')
       .firstMatch(Platform.version);
   final identifier = match?.group(1);
   if (identifier == null) return 'unknown';
   final separator = identifier.lastIndexOf('_');
-  return separator < 0 ? identifier : identifier.substring(separator + 1);
+  final arch = separator < 0 ? identifier : identifier.substring(separator + 1);
+  switch (arch) {
+    case 'x64':
+      return 'x86_64';
+    case 'arm64':
+      return 'aarch64';
+    case 'ia32':
+      return 'x86';
+    default:
+      return arch;
+  }
 }
 
 /// Rounds to two decimals: plenty for MiB/s and percentages, and stable JSON.

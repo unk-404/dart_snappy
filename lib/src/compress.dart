@@ -35,6 +35,11 @@ Uint8List _buildLowestBitTable() {
 ///
 /// Mirrors the reference implementation's quick-and-dirty hash: it keeps bits
 /// 18..31 of `kMagic * word`, i.e. the high bits of the 32-bit product.
+///
+/// On the VM the 64-bit product is exact. Under dart2js the product is a
+/// double and `>>` narrows to 32 bits, so the JavaScript build reaches a
+/// different (but still well-distributed and deterministic) slot; the emitted
+/// stream stays valid and similarly sized, it just picks other matches.
 @pragma('vm:prefer-inline')
 int _hash(int word) => ((_hashMagic * word) >> 18) & (hashTableSize - 1);
 

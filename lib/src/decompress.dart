@@ -25,7 +25,9 @@ Uint8List decompressBlock(Uint8List source) {
 /// Decodes [source] into [destination], which must hold at least the declared
 /// uncompressed length.
 ///
-/// Returns the number of bytes written (the declared uncompressed length).
+/// Exactly the declared number of bytes is written; spare capacity in
+/// [destination] is never touched. Returns the number of bytes written (the
+/// declared uncompressed length).
 int decompressBlockInto(Uint8List source, Uint8List destination) {
   final (expected, headerLength) = readVarint(source, 0);
   if (destination.length < expected) {
@@ -35,14 +37,7 @@ int decompressBlockInto(Uint8List source, Uint8List destination) {
       'must be at least the uncompressed length ($expected)',
     );
   }
-  final int spare = destination.length - expected;
-  decodeBlock(
-    source,
-    headerLength,
-    destination,
-    expected,
-    spare < outputSlop ? spare : outputSlop,
-  );
+  decodeBlock(source, headerLength, destination, expected, 0);
   return expected;
 }
 

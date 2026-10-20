@@ -6,5 +6,7 @@
   `Snappy.uncompressedLength`.
 - `SnappyCodec` for use with `dart:convert`.
 - Zero-copy `Bytes` API via `package:snappy_neo/blit.dart`.
-- Output is byte-for-byte identical to the reference Snappy implementations
-  (verified against the Rust `snap` crate in CI).
+- Output on the Dart VM and AOT is byte-for-byte identical to the reference
+  Snappy implementations (verified against the Rust `snap` crate in CI). The
+  JavaScript build uses a JS-safe hash and may choose different, equally valid,
+  matches.
