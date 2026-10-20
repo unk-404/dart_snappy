@@ -155,7 +155,7 @@ Framing format (`SnappyFraming`, masked CRC-32C included), MiB/s:
 Framing costs one CRC-32C pass over the uncompressed data on each side. When a
 higher layer already guarantees integrity, `SnappyFraming.decompress(...,
 verifyChecksums: false)` (or `SnappyFramingDecoder(verifyChecksums: false)`)
-skips the check and brings decode close to block-format speed.
+skips the check, which is the dominant cost of framed decode.
 
 Compression level 2 (`Snappy.compress(bytes, level: 2)`) is slower but denser:
 it typically saves another 7–17% on text-like data (on the corpus above:

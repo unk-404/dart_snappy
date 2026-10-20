@@ -6,7 +6,7 @@
   implementation's double-hash matcher, is 7-17% denser than level 1 on
   text-like data, and on the Dart VM produces byte-identical output to C++
   Snappy 1.3.1 level 2 (checked against committed reference streams).
-- Framing performance: CRC-32C now uses a slicing-by-8 table (about 4x faster
+- Framing performance: CRC-32C now uses a slicing-by-8 table (about 3x faster
   than the byte-at-a-time loop); the streaming encoder emits full chunks
   straight from the caller's slice instead of shifting a growing buffer
   (linear instead of quadratic on large inputs); the chunk buffer consumes by
@@ -15,7 +15,7 @@
   directly into it, with no scratch buffers or double copies.
 - `verifyChecksums:` on `SnappyFraming.decompress` and
   `SnappyFramingDecoder` skips the per-chunk CRC when integrity is guaranteed
-  by a higher layer; decode then runs at close to block-format speed.
+  by a higher layer; the CRC pass is the dominant cost of framed decode.
 - The benchmark chart now covers the framing format as well (28 rows), and
   `tool/bench_report.dart` requires all four directions when converting.
 
