@@ -6,11 +6,13 @@
 # streams were produced from exactly these bytes.
 testdata/corpus/** binary
 testdata/golden/** binary
+testdata/golden-framed/** binary
 
 *.png binary
 *.jpg binary
 *.jpeg binary
 *.pdf binary
 *.snappy binary
+*.sz binary
 *.gtb binary
 *.protodata binary

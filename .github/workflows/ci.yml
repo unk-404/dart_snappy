@@ -88,8 +88,8 @@ jobs:
       - name: Verify the Dart streams with the Rust oracle
         run: $SNAPPY_ORACLE verify --corpus testdata/corpus --compressed build/bench/dart-compressed
 
-      - name: Run interop tests
-        run: dart test test/interop_test.dart
+      - name: Run the full suite with the oracle available
+        run: dart test
 
   bench:
     name: bench (chart)

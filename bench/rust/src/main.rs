@@ -6,6 +6,12 @@
 //!   * `verify --corpus DIR --compressed DIR`
 //!       Decode every `<name>.snappy` produced by the Dart package and compare
 //!       it with the corpus file; exit non-zero on mismatch.
+//!   * `gen-frame    --corpus DIR --out DIR [--only a,b,c]`
+//!       Write reference *framed* `<name>.sz` files (stream identifier +
+//!       chunked payload with masked CRC-32C).
+//!   * `verify-frame --corpus DIR --compressed DIR`
+//!       Decode every `<name>.sz` produced by the Dart package and compare it
+//!       with the corpus file.
 //!   * `bench  --corpus DIR --out FILE`
 //!       Measure compress/decompress throughput and write a
 //!       `benchcat/report@1` JSON document.
@@ -13,6 +19,7 @@
 use std::env;
 use std::fs;
 use std::hint::black_box;
+use std::io::{Read, Write};
 use std::path::{Path, PathBuf};
 use std::process::ExitCode;
 use std::time::{Duration, Instant};
@@ -23,12 +30,14 @@ const BENCH_DURATION: Duration = Duration::from_millis(300);
 fn main() -> ExitCode {
     let args: Vec<String> = env::args().skip(1).collect();
     let Some(command) = args.first() else {
-        eprintln!("usage: snappy-oracle <gen|verify|bench> [options]");
+        eprintln!("usage: snappy-oracle <gen|verify|gen-frame|verify-frame|bench> [options]");
         return ExitCode::FAILURE;
     };
     let result = match command.as_str() {
         "gen" => cmd_gen(&args[1..]),
         "verify" => cmd_verify(&args[1..]),
+        "gen-frame" => cmd_gen_frame(&args[1..]),
+        "verify-frame" => cmd_verify_frame(&args[1..]),
         "bench" => cmd_bench(&args[1..]),
         other => {
             eprintln!("unknown command: {other}");
@@ -229,6 +238,114 @@ fn cmd_verify(args: &[String]) -> Result<(), ()> {
             }
             Err(error) => {
                 eprintln!("verify {name}: decode failed: {error}");
+                failures += 1;
+            }
+        }
+    }
+    if checked == 0 || failures > 0 {
+        eprintln!("{failures} failure(s), {checked} file(s) verified");
+        return Err(());
+    }
+    println!("{checked} file(s) verified");
+    Ok(())
+}
+
+// ---------------------------------------------------------------------------
+// framing format
+// ---------------------------------------------------------------------------
+
+fn cmd_gen_frame(args: &[String]) -> Result<(), ()> {
+    let options = parse_options(args)?;
+    let corpus = require_corpus(&options)?;
+    let out = require_out(&options)?;
+    fs::create_dir_all(out).map_err(|error| {
+        eprintln!("cannot create {}: {error}", out.display());
+    })?;
+    let mut written = 0usize;
+    for path in corpus_files(corpus) {
+        let name = file_name(&path);
+        if !options.only.is_empty() && !options.only.iter().any(|only| only == name) {
+            continue;
+        }
+        let source = fs::read(&path).map_err(|error| {
+            eprintln!("cannot read {}: {error}", path.display());
+        })?;
+        let mut encoder = snap::write::FrameEncoder::new(Vec::new());
+        encoder.write_all(&source).map_err(|error| {
+            eprintln!("frame encode failed for {name}: {error}");
+        })?;
+        let framed = encoder.into_inner().map_err(|error| {
+            eprintln!("frame encode failed for {name}: {error}");
+        })?;
+        let destination = out.join(format!("{name}.sz"));
+        fs::write(&destination, &framed).map_err(|error| {
+            eprintln!("cannot write {}: {error}", destination.display());
+        })?;
+        println!(
+            "gen-frame {name}: {} -> {} bytes ({:.3})",
+            source.len(),
+            framed.len(),
+            framed.len() as f64 / source.len() as f64
+        );
+        written += 1;
+    }
+    if written == 0 {
+        eprintln!("no corpus files matched");
+        return Err(());
+    }
+    Ok(())
+}
+
+fn cmd_verify_frame(args: &[String]) -> Result<(), ()> {
+    let options = parse_options(args)?;
+    let corpus = require_corpus(&options)?;
+    let Some(compressed_dir) = options.compressed.as_deref() else {
+        eprintln!("--compressed DIR is required");
+        return Err(());
+    };
+    let mut checked = 0usize;
+    let mut failures = 0usize;
+    for path in corpus_files(corpus) {
+        let name = file_name(&path);
+        let framed_path = compressed_dir.join(format!("{name}.sz"));
+        let framed = match fs::read(&framed_path) {
+            Ok(bytes) => bytes,
+            Err(error) => {
+                eprintln!("verify-frame {name}: cannot read {}: {error}", framed_path.display());
+                failures += 1;
+                continue;
+            }
+        };
+        let expected = match fs::read(&path) {
+            Ok(bytes) => bytes,
+            Err(error) => {
+                eprintln!("verify-frame {name}: cannot read {}: {error}", path.display());
+                failures += 1;
+                continue;
+            }
+        };
+        let mut decoder = snap::read::FrameDecoder::new(&framed[..]);
+        let mut decoded = Vec::new();
+        match decoder.read_to_end(&mut decoded) {
+            Ok(_) if decoded == expected => {
+                println!(
+                    "verify-frame {name}: ok, {} -> {} bytes ({:.3})",
+                    expected.len(),
+                    framed.len(),
+                    framed.len() as f64 / expected.len() as f64
+                );
+                checked += 1;
+            }
+            Ok(_) => {
+                eprintln!(
+                    "verify-frame {name}: MISMATCH ({} bytes decoded, {} expected)",
+                    decoded.len(),
+                    expected.len()
+                );
+                failures += 1;
+            }
+            Err(error) => {
+                eprintln!("verify-frame {name}: decode failed: {error}");
                 failures += 1;
             }
         }

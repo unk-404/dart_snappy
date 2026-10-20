@@ -10,7 +10,10 @@ compression format: fast, allocation-light, and with no native dependencies.
 - **Block format** (the "raw" format used by Parquet, RPC payloads and key-value
   stores): `Snappy.compress`, `Snappy.decompress`, `Snappy.compressInto`,
   `Snappy.decompressInto` and `Snappy.uncompressedLength`.
-- **`SnappyCodec`** for `dart:convert`.
+- **Framing format** (chunked streams with masked CRC-32C): `SnappyFraming` for
+  whole buffers, plus streaming `SnappyFramingEncoder` / `SnappyFramingDecoder`
+  that accept arbitrary slices of input.
+- **`SnappyCodec`** and **`SnappyFramingCodec`** for `dart:convert`.
 - **Zero-copy `Bytes` API** backed by [`blit`](https://pub.dev/packages/blit).
 - **Portable**: Dart VM, AOT executables and the web (the codec avoids 64-bit
   integer semantics and is covered by `dart test -p chrome`).
@@ -22,8 +25,9 @@ compression format: fast, allocation-light, and with no native dependencies.
 
 ## Status
 
-`0.1.0` implements the block format. The [framing format][framing] (stream
-identifier, chunked payloads, masked CRC32C) is planned for `0.1.1`.
+`0.1.1` implements the block format and the [framing format][framing]: stream
+identifier, compressed/uncompressed/padding/skippable chunks, masked CRC-32C
+verification, 64 KiB chunking and streaming encoders and decoders.
 
 [framing]: https://github.com/google/snappy/blob/main/framing_format.txt
 
@@ -54,6 +58,30 @@ final encoded = codec.encode(utf8.encode('hello'));
 final text = utf8.decode(codec.decode(encoded));
 ```
 
+### Framing format
+
+The framing format is the one to use for files, sockets and anything decoded
+incrementally: it splits the input into 64 KiB chunks, stores a masked CRC-32C
+per chunk and lets a decoder work without holding the whole stream in memory.
+
+```dart
+final framed = SnappyFraming.compress(bytes);
+final restored = SnappyFraming.decompress(framed);
+```
+
+Streaming, with input arriving in arbitrary slices:
+
+```dart
+final sink = const SnappyFramingEncoder().startChunkedConversion(
+  ByteConversionSink.withCallback((chunk) => output.add(chunk)),
+);
+sink.add(part1);
+sink.add(part2);
+sink.close();
+```
+
+`SnappyFramingEncoder` and `SnappyFramingDecoder` are `Converter`s, so they also
+work with `Stream.transform`.
 ### Zero-copy `Bytes`
 
 ```dart
@@ -63,6 +91,9 @@ import 'package:snappy_neo/blit.dart';
 final payload = Bytes.view(backingStore, offset, length); // no copy
 final compressed = payload.snappyCompress();              // Bytes, no copy on read
 final restored = compressed.snappyDecompress();
+
+final framed = payload.snappyFrameCompress();             // framing format
+final unpacked = framed.snappyFrameDecompress();
 ```
 
 ## API
@@ -76,6 +107,10 @@ final restored = compressed.snappyDecompress();
 | `Snappy.decompress(List<int>)` | Decompresses into a new `Uint8List` |
 | `Snappy.decompressInto(List<int>, Uint8List)` | Decompresses into your buffer, returns bytes written |
 | `SnappyCodec` / `SnappyEncoder` / `SnappyDecoder` | `dart:convert` integration |
+| `SnappyFraming.compress` / `decompress` | Whole-buffer framing format |
+| `SnappyFramingEncoder` / `SnappyFramingDecoder` | Streaming framing conversion |
+| `SnappyFramingCodec` | `dart:convert` integration for framed streams |
+| `SnappyFraming.crc32c` / `maskChecksum` | Checksum helpers for custom chunks |
 
 Invalid streams throw `FormatException`; a destination buffer that is too small
 throws `ArgumentError`.
@@ -117,10 +152,14 @@ dart run tool/bench_report.dart build/bench/dart-jit.jsonl testdata/corpus build
 - Hand-built format vectors for every tag type, literal/offset boundary and
   malformed-stream class, plus roundtrips over deterministic random, text,
   binary and mixed data from 0 bytes to several MiB.
-- `test/golden_test.dart` decodes streams produced by the Rust `snap` crate.
-- `test/interop_test.dart` runs the reference implementation in both directions
-  and asserts byte-identical compression (requires `SNAPPY_ORACLE`, built from
-  `bench/rust`).
+- `test/golden_test.dart` decodes block and framed streams produced by the
+  Rust `snap` crate.
+- `test/interop_test.dart` and `test/framing_interop_test.dart` run the
+  reference implementation in both directions and assert byte-identical output
+  for both formats (requires `SNAPPY_ORACLE`, built from `bench/rust`).
+- The framing tests cover every chunk type (compressed, uncompressed, padding,
+  skippable, repeated stream identifier), checksum mismatches, truncation, the
+  64 KiB chunk limit and streaming input split at arbitrary boundaries.
 
 Sample data in `testdata/corpus` comes from the Snappy project and is covered by
 its BSD-3-Clause test-data license (`testdata/corpus/LICENSE`).

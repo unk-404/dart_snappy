@@ -1,8 +1,8 @@
 name: snappy_neo
 description: >-
-  Pure Dart implementation of Google's Snappy compression: fast block-format
-  compress and decompress, with a zero-copy Bytes API powered by blit.
-version: 0.1.0
+  Pure Dart implementation of Google's Snappy compression: block and framing
+  formats, streaming decoders, and a zero-copy Bytes API powered by blit.
+version: 0.1.1
 repository: https://github.com/unk-404/dart_snappy
 issue_tracker: https://github.com/unk-404/dart_snappy/issues
 
