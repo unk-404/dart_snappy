@@ -94,6 +94,65 @@ void main() {
     });
   });
 
+  group('level 2 roundtrip', () {
+    for (final size in [0, 1, 15, 256, 257, 4096, 65536, 65537, 300000]) {
+      test('text/$size', () {
+        final source = textBytes(size);
+        final compressed = Snappy.compress(source, level: 2);
+        expect(
+          compressed.length,
+          lessThanOrEqualTo(Snappy.maxCompressedLength(size)),
+        );
+        expect(Snappy.decompress(compressed), source);
+      });
+    }
+
+    test('shapes', () {
+      for (final source in [
+        textBytes(200000),
+        randomBytes(100000, 9),
+        jsonLikeBytes(2000),
+        mixedBytes(150000, 4),
+        zeroBytes(100000),
+      ]) {
+        expect(Snappy.decompress(Snappy.compress(source, level: 2)), source);
+      }
+    });
+
+    test('is never materially worse than level 1', () {
+      for (final source in [textBytes(50000), jsonLikeBytes(1000)]) {
+        final l1 = Snappy.compress(source).length;
+        final l2 = Snappy.compress(source, level: 2).length;
+        expect(
+          l2,
+          lessThan(l1 + l1 ~/ 10),
+          reason: 'level 2 should not be much larger than level 1',
+        );
+      }
+    });
+    test('is denser than level 1 on compressible data', () {
+      for (final source in [
+        textBytes(200000),
+        jsonLikeBytes(2000),
+        zeroBytes(50000),
+      ]) {
+        final l1 = Snappy.compress(source);
+        final l2 = Snappy.compress(source, level: 2);
+        expect(l2.length, lessThanOrEqualTo(l1.length));
+        expect(Snappy.decompress(l2), source);
+      }
+    });
+
+    test('compressInto honours the level', () {
+      final source = textBytes(50000);
+      final destination = Uint8List(Snappy.maxCompressedLength(source.length));
+      final written = Snappy.compressInto(source, destination, level: 2);
+      expect(
+        Uint8List.sublistView(destination, 0, written),
+        Snappy.compress(source, level: 2),
+      );
+    });
+  });
   test('multi-block input never references across a block boundary', () {
     // A block is 64 KiB; two full blocks plus a partial one.
     final source = textBytes(65536 * 2 + 123);

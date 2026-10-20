@@ -53,6 +53,38 @@ int decodeBlock(
   Uint8List destination,
   int outputLength,
   int overCopy,
+) => _decodeBlockAt(source, offset, destination, outputLength, overCopy);
+
+/// Decodes into `destination[destinationOffset, destinationOffset+outputLength)`.
+///
+/// [overCopy] spare bytes after that region may be over-written, so the
+/// destination must have room for `outputLength + overCopy` bytes starting at
+/// [destinationOffset]. This lets the framing decoder write every chunk
+/// straight into the final buffer instead of decoding into a scratch buffer and
+/// copying.
+int decodeBlockInto(
+  Uint8List source,
+  int sourceOffset,
+  Uint8List destination,
+  int destinationOffset,
+  int outputLength,
+  int overCopy,
+) => _decodeBlockAt(
+  source,
+  sourceOffset,
+  destinationOffset == 0
+      ? destination
+      : Uint8List.sublistView(destination, destinationOffset),
+  outputLength,
+  overCopy,
+);
+
+int _decodeBlockAt(
+  Uint8List source,
+  int offset,
+  Uint8List destination,
+  int outputLength,
+  int overCopy,
 ) {
   final int sourceLength = source.length;
   final int writeLimit = outputLength + overCopy;

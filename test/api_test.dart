@@ -46,6 +46,33 @@ void main() {
     });
   });
 
+  group('compression levels', () {
+    test('rejects levels outside 1..2', () {
+      final source = textBytes(100);
+      expect(() => Snappy.compress(source, level: 0), throwsRangeError);
+      expect(() => Snappy.compress(source, level: 3), throwsRangeError);
+      expect(
+        () => Snappy.compressInto(source, Uint8List(200), level: 0),
+        throwsRangeError,
+      );
+    });
+
+    test('level 2 is accepted and round-trips', () {
+      final source = textBytes(10000);
+      expect(Snappy.decompress(Snappy.compress(source, level: 2)), source);
+    });
+
+    test('SnappyCodec and SnappyEncoder pass the level through', () {
+      final source = textBytes(20000);
+      const codec = SnappyCodec(level: 2);
+      expect(codec.encode(source), Snappy.compress(source, level: 2));
+      expect(
+        const SnappyEncoder(level: 2).convert(source),
+        Snappy.compress(source, level: 2),
+      );
+      expect(codec.decode(codec.encode(source)), source);
+    });
+  });
   group('uncompressedLength', () {
     test('does not decode the body', () {
       // A header claiming 1234 bytes with no body at all.

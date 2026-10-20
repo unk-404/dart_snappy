@@ -44,6 +44,47 @@ void main() {
       expect(SnappyFraming.crc32c('123456789'.codeUnits), 0xE3069283);
     });
 
+    test('slicing-by-8 matches the bitwise definition', () {
+      // Straightforward reflected-CRC reference, one bit at a time.
+      int reference(List<int> data) {
+        var crc = 0xFFFFFFFF;
+        for (final byte in data) {
+          crc ^= byte;
+          for (var bit = 0; bit < 8; bit++) {
+            crc = (crc & 1) != 0 ? (0x82F63B78 ^ (crc >>> 1)) : (crc >>> 1);
+          }
+        }
+        return (crc ^ 0xFFFFFFFF) & 0xFFFFFFFF;
+      }
+
+      final rng = XorShift32(99);
+      for (final length in [
+        0,
+        1,
+        2,
+        3,
+        7,
+        8,
+        9,
+        15,
+        16,
+        17,
+        31,
+        32,
+        1000,
+        65536,
+      ]) {
+        final data = Uint8List(length);
+        for (var i = 0; i < length; i++) {
+          data[i] = rng.nextByte();
+        }
+        expect(
+          SnappyFraming.crc32c(data),
+          reference(data),
+          reason: 'length $length',
+        );
+      }
+    });
     test('known short values', () {
       expect(SnappyFraming.crc32c(Uint8List(0)), 0x00000000);
       expect(SnappyFraming.crc32c(Uint8List.fromList([0x00])), 0x527D5351);
@@ -375,6 +416,23 @@ void main() {
       expect(() => SnappyFraming.decompress(broken), throwsFormatException);
     });
 
+    test('checksum verification can be skipped explicitly', () {
+      final framed = SnappyFraming.compress(textBytes(4000));
+      final broken = Uint8List.fromList(framed);
+      broken[14] ^= 0x01; // first checksum byte of the first data chunk
+      expect(() => SnappyFraming.decompress(broken), throwsFormatException);
+      expect(
+        SnappyFraming.decompress(broken, verifyChecksums: false),
+        textBytes(4000),
+      );
+      // The streaming decoder honours the same flag.
+      final out = BytesBuilder();
+      final sink = const SnappyFramingDecoder(verifyChecksums: false)
+          .startChunkedConversion(ByteConversionSink.withCallback(out.add));
+      sink.add(broken);
+      sink.close();
+      expect(out.toBytes(), textBytes(4000));
+    });
     test('reserved unskippable chunk types fail', () {
       for (final type in [0x02, 0x40, 0x7f]) {
         expect(
@@ -543,6 +601,43 @@ void main() {
     });
   });
 
+  group('compression level', () {
+    test('level 2 frames are denser and round-trip', () {
+      final source = textBytes(150000);
+      final l1 = SnappyFraming.compress(source);
+      final l2 = SnappyFraming.compress(source, level: 2);
+      expect(l2.length, lessThanOrEqualTo(l1.length));
+      expect(SnappyFraming.decompress(l2), source);
+    });
+
+    test('the streaming encoder honours the level', () {
+      final source = textBytes(140000);
+      final out = BytesBuilder();
+      final sink = const SnappyFramingEncoder(level: 2)
+          .startChunkedConversion(ByteConversionSink.withCallback(out.add));
+      for (var start = 0; start < source.length; start += 3000) {
+        final end = start + 3000 < source.length ? start + 3000 : source.length;
+        sink.add(Uint8List.sublistView(source, start, end));
+      }
+      sink.close();
+      expect(out.toBytes(), SnappyFraming.compress(source, level: 2));
+      expect(SnappyFraming.decompress(out.toBytes()), source);
+    });
+
+    test('invalid level is rejected', () {
+      expect(
+        () => SnappyFraming.compress(textBytes(10), level: 9),
+        throwsRangeError,
+      );
+    });
+
+    test('the codec passes the level through', () {
+      final source = textBytes(30000);
+      const codec = SnappyFramingCodec(level: 2);
+      expect(codec.encode(source), SnappyFraming.compress(source, level: 2));
+      expect(codec.decode(codec.encode(source)), source);
+    });
+  });
   group('codec', () {
     test('roundtrips through dart:convert', () {
       const codec = SnappyFramingCodec();

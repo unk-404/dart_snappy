@@ -53,6 +53,7 @@ Object? _sink;
 void main() {
   late final Map<String, Uint8List> corpus;
   late final Map<String, Uint8List> compressed;
+  late final Map<String, Uint8List> framed;
 
   setUpAll(() {
     corpus = _readCorpus();
@@ -60,12 +61,20 @@ void main() {
       for (final entry in corpus.entries)
         entry.key: Snappy.compress(entry.value),
     };
+    framed = {
+      for (final entry in corpus.entries)
+        entry.key: SnappyFraming.compress(entry.value),
+    };
     // Cheap one-time sanity check: the decompress benchmarks must restore the
     // exact corpus bytes the compress benchmarks started from.
     for (final name in _corpusFiles) {
       final restored = Snappy.decompress(compressed[name]!);
       if (!_sameBytes(restored, corpus[name]!)) {
         throw StateError('Snappy roundtrip mismatch for $name');
+      }
+      final unpacked = SnappyFraming.decompress(framed[name]!);
+      if (!_sameBytes(unpacked, corpus[name]!)) {
+        throw StateError('SnappyFraming roundtrip mismatch for $name');
       }
     }
   });
@@ -95,6 +104,32 @@ void main() {
         name,
         () {
           _sink = Snappy.decompress(compressed[name]!);
+        },
+        minDuration: _minDuration,
+        warmupMinDuration: _warmupMinDuration,
+      );
+    }
+  });
+
+  group('frame-compress', () {
+    for (final name in _corpusFiles) {
+      benchmark(
+        name,
+        () {
+          _sink = SnappyFraming.compress(corpus[name]!);
+        },
+        minDuration: _minDuration,
+        warmupMinDuration: _warmupMinDuration,
+      );
+    }
+  });
+
+  group('frame-decompress', () {
+    for (final name in _corpusFiles) {
+      benchmark(
+        name,
+        () {
+          _sink = SnappyFraming.decompress(framed[name]!);
         },
         minDuration: _minDuration,
         warmupMinDuration: _warmupMinDuration,

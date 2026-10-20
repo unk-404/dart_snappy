@@ -21,10 +21,16 @@ import 'package:test/test.dart';
 /// archive), so this file skips itself when the fixtures are absent.
 void main() {
   final blockFixtures = _fixtures('testdata/golden', '.snappy');
+  final level2Fixtures = _fixtures('testdata/golden-level2', '.snappy');
   final framingFixtures = _fixtures('testdata/golden-framed', '.sz');
 
   test('golden fixtures exist', () {
     expect(blockFixtures, isNotEmpty, reason: 'run the oracle gen step');
+    expect(
+      level2Fixtures,
+      isNotEmpty,
+      reason: 'run the C++ level 2 reference step',
+    );
     expect(
       framingFixtures,
       isNotEmpty,
@@ -41,6 +47,23 @@ void main() {
       final expected = source.readAsBytesSync();
       expect(Snappy.uncompressedLength(compressed), expected.length);
       expect(Snappy.decompress(compressed), expected);
+    });
+  }
+
+  for (final fixture in level2Fixtures) {
+    final name = fixture.uri.pathSegments.last.replaceAll('.snappy', '');
+    final source = File('testdata/corpus/$name');
+    test('level 2 matches the C++ reference stream for $name', () {
+      expect(source.existsSync(), isTrue);
+      final golden = fixture.readAsBytesSync();
+      final expected = source.readAsBytesSync();
+      expect(Snappy.compress(expected, level: 2), golden);
+      expect(Snappy.decompress(golden), expected);
+      expect(
+        golden.length,
+        lessThan(File('testdata/golden/$name.snappy').lengthSync()),
+        reason: 'level 2 should be denser than level 1',
+      );
     });
   }
 

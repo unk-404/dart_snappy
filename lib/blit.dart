@@ -27,8 +27,10 @@ extension SnappyBytesExtension on Bytes {
   /// Compresses this view into a new [Bytes] using the block format.
   ///
   /// Slicing is zero-copy on both sides: the result is a `Bytes` view over the
-  /// encoder's output buffer, exactly as long as the compressed stream.
-  Bytes snappyCompress() => Bytes.fromUint8List(Snappy.compress(asUint8List()));
+  /// encoder's output buffer, exactly as long as the compressed stream. [level]
+  /// is 1 (fastest, the default) or 2 (denser and slower).
+  Bytes snappyCompress({int level = 1}) =>
+      Bytes.fromUint8List(Snappy.compress(asUint8List(), level: level));
 
   /// Decompresses this block-format view into a new [Uint8List].
   Uint8List snappyDecompress() => Snappy.decompress(asUint8List());
@@ -37,8 +39,10 @@ extension SnappyBytesExtension on Bytes {
   int get snappyUncompressedLength => Snappy.uncompressedLength(asUint8List());
 
   /// Frames this view into a new [Bytes] using the Snappy framing format.
-  Bytes snappyFrameCompress() =>
-      Bytes.fromUint8List(SnappyFraming.compress(asUint8List()));
+  ///
+  /// [level] is 1 (fastest, the default) or 2 (denser and slower).
+  Bytes snappyFrameCompress({int level = 1}) =>
+      Bytes.fromUint8List(SnappyFraming.compress(asUint8List(), level: level));
 
   /// Decompresses this framed view into a new [Uint8List].
   Uint8List snappyFrameDecompress() => SnappyFraming.decompress(asUint8List());

@@ -2,6 +2,7 @@ import 'dart:typed_data';
 
 import 'package:blit/blit.dart';
 import 'package:snappy_neo/blit.dart';
+import 'package:snappy_neo/snappy_neo.dart';
 import 'package:test/test.dart';
 
 import 'support/test_data.dart';
@@ -34,6 +35,15 @@ void main() {
       expect(again.asUint8List(), compressed.asUint8List());
     });
 
+    test('passes the compression level through', () {
+      final source = textBytes(20000);
+      final l2 = Bytes.fromUint8List(source).snappyCompress(level: 2);
+      expect(l2.asUint8List(), Snappy.compress(source, level: 2));
+      expect(l2.snappyDecompress(), source);
+      final framed = Bytes.fromUint8List(source).snappyFrameCompress(level: 2);
+      expect(framed.asUint8List(), SnappyFraming.compress(source, level: 2));
+      expect(framed.snappyFrameDecompress(), source);
+    });
     test('round-trips a framed stream', () {
       final source = textBytes(90000);
       final framed = Bytes.fromUint8List(source).snappyFrameCompress();

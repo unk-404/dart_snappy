@@ -14,10 +14,16 @@ import 'snappy.dart';
 /// ```
 class SnappyCodec extends Codec<List<int>, List<int>> {
   /// Creates a Snappy block codec.
-  const SnappyCodec();
+  ///
+  /// [level] is 1 (fastest, the default) or 2 (denser and slower); it only
+  /// affects encoding.
+  const SnappyCodec({this.level = 1});
+
+  /// Compression level used by [encoder].
+  final int level;
 
   @override
-  Converter<List<int>, List<int>> get encoder => const SnappyEncoder();
+  Converter<List<int>, List<int>> get encoder => SnappyEncoder(level: level);
 
   @override
   Converter<List<int>, List<int>> get decoder => const SnappyDecoder();
@@ -26,10 +32,15 @@ class SnappyCodec extends Codec<List<int>, List<int>> {
 /// Compresses a whole byte list with the Snappy block format.
 class SnappyEncoder extends Converter<List<int>, List<int>> {
   /// Creates a Snappy encoder.
-  const SnappyEncoder();
+  ///
+  /// [level] is 1 (fastest, the default) or 2 (denser and slower).
+  const SnappyEncoder({this.level = 1});
+
+  /// Compression level passed to [Snappy.compress].
+  final int level;
 
   @override
-  Uint8List convert(List<int> input) => Snappy.compress(input);
+  Uint8List convert(List<int> input) => Snappy.compress(input, level: level);
 }
 
 /// Decompresses a whole Snappy block stream.

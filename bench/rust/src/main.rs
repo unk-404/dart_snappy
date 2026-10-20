@@ -410,6 +410,58 @@ fn cmd_bench(args: &[String]) -> Result<(), ()> {
             decompress_mib,
             decompress_rme,
         ));
+
+        // Framing format: whole-buffer encode/decode, allocating like the Dart
+        // `SnappyFraming.compress`/`decompress` entry points.
+        let mut frame_encoder = snap::write::FrameEncoder::new(Vec::new());
+        frame_encoder.write_all(&source).map_err(|error| {
+            eprintln!("frame encode failed for {name}: {error}");
+        })?;
+        let framed = frame_encoder.into_inner().map_err(|error| {
+            eprintln!("frame encode failed for {name}: {error}");
+        })?;
+        for _ in 0..3 {
+            let mut encoder = snap::write::FrameEncoder::new(Vec::new());
+            encoder.write_all(black_box(&source)).unwrap();
+            black_box(encoder.into_inner().unwrap());
+            let mut frame_decoder = snap::read::FrameDecoder::new(&framed[..]);
+            let mut out = Vec::new();
+            frame_decoder.read_to_end(&mut out).unwrap();
+            black_box(out);
+        }
+        let frame_compress = measure(|| {
+            let mut encoder = snap::write::FrameEncoder::new(Vec::new());
+            encoder.write_all(black_box(&source)).unwrap();
+            black_box(encoder.into_inner().unwrap());
+        });
+        let frame_decompress = measure(|| {
+            let mut frame_decoder = snap::read::FrameDecoder::new(&framed[..]);
+            let mut out = Vec::new();
+            frame_decoder.read_to_end(&mut out).unwrap();
+            black_box(out);
+        });
+        let (frame_compress_mib, frame_compress_rme) = rate(frame_compress, source.len());
+        let (frame_decompress_mib, frame_decompress_rme) =
+            rate(frame_decompress, source.len());
+        println!(
+            "{name}: frame compress {frame_compress_mib:.1} MiB/s \
+             (+/-{frame_compress_rme:.1}%), frame decompress {frame_decompress_mib:.1} MiB/s \
+             (+/-{frame_decompress_rme:.1}%)"
+        );
+        rows.push(row(
+            "frame-compress",
+            name,
+            source.len(),
+            frame_compress_mib,
+            frame_compress_rme,
+        ));
+        rows.push(row(
+            "frame-decompress",
+            name,
+            source.len(),
+            frame_decompress_mib,
+            frame_decompress_rme,
+        ));
     }
 
     if rows.is_empty() {
@@ -447,10 +499,11 @@ fn cmd_bench(args: &[String]) -> Result<(), ()> {
 }
 
 fn row(operation: &str, name: &str, bytes: usize, value: f64, rme: f64) -> String {
-    let group = if operation == "compress" {
-        "Compress"
-    } else {
-        "Decompress"
+    let group = match operation {
+        "compress" => "Compress",
+        "decompress" => "Decompress",
+        "frame-compress" => "Frame compress",
+        _ => "Frame decompress",
     };
     format!(
         "{{\"id\": \"{operation}/{name}\", \"group\": \"{group}\", \"label\": \"{name} · {} KiB\", \"unit\": \"MiB/s\", \"value\": {value:.3}, \"direction\": \"higher\", \"stats\": {{\"rme_pct\": {rme:.2}}}}}",

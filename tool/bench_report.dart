@@ -30,6 +30,22 @@ import 'dart:io';
 /// One mebibyte in bytes: `ops/sec × bytes / 2^20` is MiB/s.
 const _bytesPerMiB = 1024 * 1024;
 
+/// Benchmark directions, in report order.
+const _directions = [
+  'compress',
+  'decompress',
+  'frame-compress',
+  'frame-decompress',
+];
+
+/// Section heading for each direction.
+const _groupNames = {
+  'compress': 'Compress',
+  'decompress': 'Decompress',
+  'frame-compress': 'Frame compress',
+  'frame-decompress': 'Frame decompress',
+};
+
 /// Files in `testdata/corpus/` that are metadata, not benchmark input.
 const _nonCorpusNames = {
   'LICENSE',
@@ -148,7 +164,7 @@ List<_Row> _readRows(File jsonl, Map<String, int> corpusSizes) {
     }
     final direction = name.substring(0, space);
     final fileName = name.substring(space + 1);
-    if (direction != 'compress' && direction != 'decompress') {
+    if (!_directions.contains(direction)) {
       _dataError(
         '${jsonl.path}:$lineNumber: unknown direction "$direction" in "$name"',
       );
@@ -193,7 +209,7 @@ List<_Row> _readRows(File jsonl, Map<String, int> corpusSizes) {
     final row = _Row(
       direction: direction,
       fileName: fileName,
-      group: direction == 'compress' ? 'Compress' : 'Decompress',
+      group: _groupNames[direction]!,
       label: '$fileName · ${sizeBytes ~/ 1024} KiB',
       value: _round2(opsPerSecond * sizeBytes / _bytesPerMiB),
       rmePct: _round2(rmePct.toDouble()),

@@ -40,8 +40,13 @@ abstract final class Snappy {
   ///
   /// The returned buffer may share memory with a larger allocation, so copy it
   /// with [Uint8List.fromList] if an exactly sized buffer is required.
-  static Uint8List compress(List<int> source) =>
-      impl.compressBlock(_asBytes(source));
+  ///
+  /// [level] is 1 (fastest, the default) or 2 (denser and slower). Level 2 uses
+  /// the reference implementation's double-hash matcher: on the VM its output
+  /// is byte-identical to C++ Snappy 1.3.1's level 2, and it typically saves
+  /// another 5-17% on text-like data.
+  static Uint8List compress(List<int> source, {int level = 1}) =>
+      impl.compressBlock(_asBytes(source), level: level);
 
   /// Compresses [source] into [destination] and returns the byte count.
   ///
@@ -49,8 +54,13 @@ abstract final class Snappy {
   /// bytes; [ArgumentError] is thrown otherwise. The encoder's fast paths may
   /// write up to 15 bytes past the returned length (still inside
   /// [destination]); only the first `returnValue` bytes are meaningful.
-  static int compressInto(List<int> source, Uint8List destination) =>
-      impl.compressBlockInto(_asBytes(source), destination);
+  ///
+  /// [level] is 1 (fastest, the default) or 2 (denser and slower).
+  static int compressInto(
+    List<int> source,
+    Uint8List destination, {
+    int level = 1,
+  }) => impl.compressBlockInto(_asBytes(source), destination, level: level);
 
   /// Decompresses the Snappy block stream [source] into a new [Uint8List].
   ///

@@ -1,3 +1,24 @@
+## 0.1.2
+
+- Compression level 2: `level: 2` on `Snappy.compress`, `Snappy.compressInto`,
+  `SnappyCodec` / `SnappyEncoder`, `SnappyFraming.compress`,
+  `SnappyFramingEncoder` and the `blit` extensions. It uses the reference
+  implementation's double-hash matcher, is 7-17% denser than level 1 on
+  text-like data, and on the Dart VM produces byte-identical output to C++
+  Snappy 1.3.1 level 2 (checked against committed reference streams).
+- Framing performance: CRC-32C now uses a slicing-by-8 table (about 4x faster
+  than the byte-at-a-time loop); the streaming encoder emits full chunks
+  straight from the caller's slice instead of shifting a growing buffer
+  (linear instead of quadratic on large inputs); the chunk buffer consumes by
+  index instead of memmoving; and the whole-buffer decoder validates the
+  layout in one pass, allocates the exact output size and decodes each chunk
+  directly into it, with no scratch buffers or double copies.
+- `verifyChecksums:` on `SnappyFraming.decompress` and
+  `SnappyFramingDecoder` skips the per-chunk CRC when integrity is guaranteed
+  by a higher layer; decode then runs at close to block-format speed.
+- The benchmark chart now covers the framing format as well (28 rows), and
+  `tool/bench_report.dart` requires all four directions when converting.
+
 ## 0.1.1
 
 - The Snappy framing format: `SnappyFraming.compress` / `SnappyFraming.decompress`
