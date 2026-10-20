@@ -1,0 +1,10 @@
+# Files published to pub.dev. The rest of the repository is development
+# scaffolding: the benchmark corpus and chart inputs are not needed by
+# consumers and would only bloat the archive.
+
+.agents/
+.github/
+bench/
+testdata/
+build/
+benchcat.toml
