@@ -52,8 +52,9 @@ final written = Snappy.compressInto(bytes, output);        // level defaults to 
 ### Performance-first API (0.2.0)
 
 `SnappyEncoder` and `SnappyDecoder` are reusable, allocation-free codec
-objects. `encodeInto` / `decodeInto` write into buffers you own, which is
-10-160% faster than the allocating convenience functions:
+objects. `encodeInto` / `decodeInto` write into buffers you own; for
+literal-heavy input `decodeInto` is up to 2.5x faster than the allocating
+convenience function:
 
 ```dart
 const encoder = SnappyEncoder();
@@ -204,11 +205,13 @@ Dart side:
 Decode lands at 64-127% of native on text and copy-heavy data (33-69% on
 literal-heavy data, where Dart's memmove is the limit). Encode lands at
 15-42%: Snappy's encoder is a per-byte hash-probe loop, and every typed-data
-access and 64-bit arithmetic op costs a Dart VM instruction where native code
-uses a handful of cycles. There is no SIMD or unaligned 64-bit load primitive
-in Dart, so a pure Dart encoder cannot approach native code instruction for
-instruction. The decode path benefits from `setRange`, which compiles to a
-memmove intrinsic, which is why it gets much closer.
+access and 64-bit arithmetic op costs one or more Dart VM instructions where
+native code uses a handful of cycles. Dart has no unaligned 64-bit load and no
+way to feed a SIMD register from an arbitrary byte offset, so a pure Dart
+encoder cannot approach native code instruction for instruction. The decode
+path benefits from `setRange`, which compiles to a memmove intrinsic, which is
+why it gets much closer. Native parity for encode would require an FFI
+backend; the package deliberately stays pure Dart for now.
 
 The CI chart below measures the same allocation-free path on both sides.
 ![Snappy block and framing throughput on the CI runner: Dart JIT, Dart AOT and Rust snap](https://raw.githubusercontent.com/unk-404/dart_snappy/master/assets/benchmarks.svg)

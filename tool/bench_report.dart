@@ -58,7 +58,7 @@ const _usage = '''
 Usage: dart run tool/bench_report.dart [--allow-partial] <jsonl> <corpus-dir> <out-json>
 
 Converts benchmark_test `--output jsonl` results into a benchcat/report@1
-report. Every row must be named "<compress|decompress> <corpus basename>".
+report. Every row must be named "<compress|decompress|frame-compress|frame-decompress>\n<corpus basename>".
 
 By default both directions are required for every corpus file. Pass
 --allow-partial to accept a subset (local --name/--plain-name runs).''';
@@ -159,7 +159,7 @@ List<_Row> _readRows(File jsonl, Map<String, int> corpusSizes) {
     if (space <= 0 || space == name.length - 1) {
       _dataError(
         '${jsonl.path}:$lineNumber: benchmark name "$name" does not match '
-        '"<compress|decompress> <basename>"',
+        '"<direction> <basename>"',
       );
     }
     final direction = name.substring(0, space);
