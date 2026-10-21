@@ -113,6 +113,25 @@ abstract final class SnappyFraming {
     List<int> source, {
     bool verifyChecksums = true,
   }) => decompressFramed(_asBytes(source), verifyChecksums: verifyChecksums);
+
+  /// The total uncompressed length a framed stream declares.
+  ///
+  /// Validates the chunk layout without decoding any payload.
+  static int uncompressedLength(List<int> source) =>
+      framedUncompressedLength(_asBytes(source));
+
+  /// Decodes a framed stream into [destination] and returns the byte count.
+  ///
+  /// [destination] must hold at least [uncompressedLength] bytes.
+  static int decompressInto(
+    List<int> source,
+    Uint8List destination, {
+    bool verifyChecksums = true,
+  }) => decompressFramedInto(
+    _asBytes(source),
+    destination,
+    verifyChecksums: verifyChecksums,
+  );
 }
 
 /// Encodes [source] as a complete framed stream.
@@ -182,17 +201,20 @@ int compressFramedInto(
   return op;
 }
 
-/// Decodes a complete framed stream.
-///
-/// The chunk layout is validated and the output sized in a first pass, then
-/// every chunk is decoded straight into the final buffer, so a whole-buffer
-/// decode performs no intermediate copies.
-Uint8List decompressFramed(Uint8List source, {bool verifyChecksums = true}) {
-  // Pass 1: validate the chunk layout and compute the output size.
-  final chunks =
-      <
-        (int type, int payloadStart, int payloadEnd, int expected, int checksum)
-      >[];
+/// One parsed chunk: type, payload range, declared uncompressed length and
+/// stored masked checksum.
+typedef _ChunkRef = (
+  int type,
+  int payloadStart,
+  int payloadEnd,
+  int expected,
+  int checksum,
+);
+
+/// Validates the chunk layout of [source] and returns the total uncompressed
+/// length together with one reference per data chunk.
+(int, List<_ChunkRef>) _parseChunks(Uint8List source) {
+  final chunks = <_ChunkRef>[];
   var total = 0;
   var ip = 0;
   var sawIdentifier = false;
@@ -291,9 +313,20 @@ Uint8List decompressFramed(Uint8List source, {bool verifyChecksums = true}) {
   if (!sawIdentifier) {
     throw const FormatException('snappy framing: missing stream identifier');
   }
+  return (total, chunks);
+}
 
-  // Pass 2: decode straight into the exact-size output buffer.
-  final out = Uint8List(total + outputSlop);
+/// Decodes the parsed [chunks] of [source] into `destination[0, total)`.
+///
+/// [overCopy] spare bytes after the decoded range may be over-written by the
+/// block decoder's fast copy paths.
+void _decodeChunks(
+  Uint8List source,
+  List<_ChunkRef> chunks,
+  Uint8List destination, {
+  required bool verifyChecksums,
+  required int overCopy,
+}) {
   var op = 0;
   for (final (type, payloadStart, payloadEnd, expected, checksum) in chunks) {
     if (type == _chunkCompressed) {
@@ -306,18 +339,71 @@ Uint8List decompressFramed(Uint8List source, {bool verifyChecksums = true}) {
       decompressor.decodeBlockInto(
         block,
         blockStart,
-        out,
+        destination,
         op,
         expected,
-        outputSlop,
+        overCopy,
       );
     } else {
-      out.setRange(op, op + expected, source, payloadStart + 4);
+      destination.setRange(op, op + expected, source, payloadStart + 4);
     }
-    if (verifyChecksums) _verifyChecksum(out, op, expected, checksum);
+    if (verifyChecksums) {
+      _verifyChecksum(destination, op, expected, checksum);
+    }
     op += expected;
   }
+}
+
+/// The total uncompressed length a framed stream declares.
+///
+/// Validates the chunk layout (identifiers, lengths and skippable types) without
+/// decoding any payload.
+int framedUncompressedLength(Uint8List source) => _parseChunks(source).$1;
+
+/// Decodes a complete framed stream into a new [Uint8List].
+///
+/// The chunk layout is validated and the output sized in a first pass, then
+/// every chunk is decoded straight into the final buffer, so a whole-buffer
+/// decode performs no intermediate copies.
+Uint8List decompressFramed(Uint8List source, {bool verifyChecksums = true}) {
+  final (int total, List<_ChunkRef> chunks) = _parseChunks(source);
+  final out = Uint8List(total + outputSlop);
+  _decodeChunks(
+    source,
+    chunks,
+    out,
+    verifyChecksums: verifyChecksums,
+    overCopy: outputSlop,
+  );
   return Uint8List.sublistView(out, 0, total);
+}
+
+/// Decodes a framed stream into [destination] and returns the byte count.
+///
+/// [destination] must hold at least [framedUncompressedLength] bytes. Only the
+/// decoded range is written; bytes after it are left untouched.
+int decompressFramedInto(
+  Uint8List source,
+  Uint8List destination, {
+  bool verifyChecksums = true,
+}) {
+  final (int total, List<_ChunkRef> chunks) = _parseChunks(source);
+  if (destination.length < total) {
+    throw ArgumentError.value(
+      destination.length,
+      'destination',
+      'must be at least $total bytes for this stream',
+    );
+  }
+  final int spare = destination.length - total;
+  _decodeChunks(
+    source,
+    chunks,
+    destination,
+    verifyChecksums: verifyChecksums,
+    overCopy: spare < outputSlop ? spare : outputSlop,
+  );
+  return total;
 }
 
 /// Streaming encoder for the Snappy framing format.

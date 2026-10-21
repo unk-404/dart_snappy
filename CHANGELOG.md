@@ -1,3 +1,24 @@
+## 0.2.2
+
+- Requires `blit` 0.2.1 and adds `package:snappy_neo/unsafe.dart`, an
+  `UnsafeBytes` integration for codec output in external memory:
+  `snappyCompress` / `snappyDecompress` / `snappyFrameCompress` /
+  `snappyFrameDecompress` return an owning `SnappyMemory` (external allocation
+  plus a zero-copy view), and the `*Into` variants write into a caller
+  `UnsafeBytes`. This matters where the output allocation dominates: the
+  allocation-free decode is 68% faster on `paper-100k.pdf` and 2.2x faster on
+  `fireworks.jpeg` than the garbage-collected `Snappy.decompress` (a `malloc`-ed
+  buffer costs about 0.1 us where a zero-filled `Uint8List` costs about 1.7 us
+  per 64 KiB). No wire-format or API changes to the existing entries.
+- `SnappyFraming.uncompressedLength` and `SnappyFraming.decompressInto`: the
+  frame layout parser is shared with `decompress`, so a framed stream can be
+  sized first and decoded straight into any buffer (heap or external).
+- Decoding into an `UnsafeBytes` view runs at the same speed as decoding into a
+  heap `Uint8List`: blit's views are typed-data views over external memory.
+  The block hot loops still use `Uint8List` + `ByteData`; `UnsafeBytes`'
+  raw accessors are comparable to aligned typed-data access but unaligned
+  pointer loads are not portable and the web backend is a wasm arena.
+
 ## 0.2.1
 
 - Requires `blit` 0.2.0. The integration imports the focused core-buffer entry

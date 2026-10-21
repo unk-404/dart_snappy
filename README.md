@@ -135,6 +135,40 @@ final message = out.freeze();
 `package:blit/blit_buffer.dart` is the focused core-buffer entry; 0.2.0's
 `package:blit/blit.dart` is the companion file-IO API.
 
+### External memory (`UnsafeBytes`)
+
+`package:snappy_neo/unsafe.dart` runs the codec over blit's `UnsafeBytes`
+(`malloc` on native platforms, a WebAssembly arena on the web). Results own
+their external allocation:
+
+```dart
+import 'package:blit/unsafe.dart';
+import 'package:snappy_neo/unsafe.dart';
+
+final input = UnsafeBytes.alloc(payload.length)
+  ..view(payload.length).setRange(0, payload.length, payload);
+
+final compressed = input.snappyCompress(payload.length); // SnappyMemory
+final restored = compressed.memory.snappyDecompress(compressed.length);
+
+print(restored.bytes); // zero-copy Uint8List view over external memory
+
+input.free();
+compressed.free();
+restored.free();
+```
+
+The `*Into` variants (`snappyCompressInto`, `snappyDecompressInto`,
+`snappyFrameCompressInto`, `snappyFrameDecompressInto`) write into a caller
+`UnsafeBytes` and take explicit lengths, so an I/O pipeline can decode straight
+into an mmap or native buffer. External memory skips the zero-filled
+garbage-collected allocation: a 64 KiB `malloc` costs about 0.1 us versus about
+1.7 us for `Uint8List`, which makes allocation-dominated decodes 1.7-2.2x
+faster, while decoding itself runs at the same speed as on the heap.
+
+Views must be freed manually. On the web the arena is shared and may move, so
+do not retain a view across further allocations.
+
 ## API
 
 | Member | Description |
@@ -150,6 +184,9 @@ final message = out.freeze();
 | `SnappyFraming.compress` / `decompress` | Whole-buffer framing format |
 | `SnappyFraming.maxCompressedLength(int)` | Upper bound for a framed stream |
 | `SnappyFraming.compressInto(List<int>, Uint8List)` | Frames into your buffer, returns bytes written |
+| `SnappyFraming.uncompressedLength(List<int>)` | Frame sizing without decoding |
+| `SnappyFraming.decompressInto(List<int>, Uint8List)` | Decodes a framed stream into your buffer |
+| `package:snappy_neo/unsafe.dart` | `UnsafeBytes` (external memory) encode/decode |
 | `SnappyFramingEncoder` / `SnappyFramingDecoder` | Streaming framing conversion |
 | `SnappyFramingCodec` | `dart:convert` integration for framed streams |
 | `SnappyFraming.crc32c` / `maskChecksum` | Checksum helpers for custom chunks |
