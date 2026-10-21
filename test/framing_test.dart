@@ -661,4 +661,25 @@ void main() {
       expect(codec.decoder.convert(framed), payload);
     });
   });
+  group('compressInto', () {
+    test('writes the same stream as compress', () {
+      final source = textBytes(200000);
+      final expected = SnappyFraming.compress(source);
+      final out = Uint8List(SnappyFraming.maxCompressedLength(source.length));
+      final written = SnappyFraming.compressInto(source, out);
+      expect(written, expected.length);
+      expect(Uint8List.sublistView(out, 0, written), expected);
+    });
+
+    test('rejects a destination that is too small', () {
+      final source = textBytes(5000);
+      final tooSmall = Uint8List(
+        SnappyFraming.maxCompressedLength(source.length) - 1,
+      );
+      expect(
+        () => SnappyFraming.compressInto(source, tooSmall),
+        throwsArgumentError,
+      );
+    });
+  });
 }

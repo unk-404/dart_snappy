@@ -1,6 +1,6 @@
 import 'dart:typed_data';
 
-import 'package:blit/blit.dart';
+import 'package:blit/blit_buffer.dart';
 import 'package:snappy_neo/blit.dart';
 import 'package:snappy_neo/snappy_neo.dart';
 import 'package:test/test.dart';
@@ -88,5 +88,36 @@ void main() {
       final view = Bytes.view(backing, 1000, 3000);
       expect(view.snappyFrameCompress().snappyFrameDecompress(), payload);
     });
+  });
+
+  group('blit BytesMut API', () {
+    test('appends a block stream into spare capacity', () {
+      final source = textBytes(4000);
+      final out = BytesMut();
+      out.snappyCompressFrom(Bytes.fromUint8List(source), level: 2);
+      expect(out.freeze().asUint8List(), Snappy.compress(source, level: 2));
+    });
+
+    test('appends a framed stream into spare capacity', () {
+      final source = textBytes(90000);
+      final out = BytesMut(16);
+      out.snappyFrameCompressFrom(Bytes.fromUint8List(source));
+      expect(out.freeze().asUint8List(), SnappyFraming.compress(source));
+    });
+
+    test(
+      'a frozen view stays valid after the buffer is cleared and refilled',
+      () {
+        final first = textBytes(3000);
+        final second = textBytes(5000);
+        final out = BytesMut();
+        out.snappyCompressFrom(Bytes.fromUint8List(first));
+        final frozen = out.freeze();
+        out.clear();
+        out.snappyCompressFrom(Bytes.fromUint8List(second));
+        expect(Snappy.decompress(frozen.asUint8List()), first);
+        expect(Snappy.decompress(out.freeze().asUint8List()), second);
+      },
+    );
   });
 }

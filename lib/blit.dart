@@ -1,10 +1,10 @@
 /// Zero-copy `blit` integration for [Snappy] and [SnappyFraming].
 ///
 /// Import this library instead of `package:snappy_neo/snappy_neo.dart` when
-/// you already work with `Bytes` and want to avoid buffer copies:
+/// you already work with `Bytes`/`BytesMut` and want to avoid buffer copies:
 ///
 /// ```dart
-/// import 'package:blit/bytes.dart';
+/// import 'package:blit/blit_buffer.dart';
 /// import 'package:snappy_neo/blit.dart';
 ///
 /// final compressed = Bytes.fromUint8List(payload).snappyCompress();
@@ -17,7 +17,7 @@ library;
 
 import 'dart:typed_data';
 
-import 'package:blit/blit.dart';
+import 'package:blit/blit_buffer.dart';
 
 import 'src/framing.dart';
 import 'src/snappy.dart';
@@ -49,4 +49,29 @@ extension SnappyBytesExtension on Bytes {
   /// [verifyChecksums] may be disabled when another layer guarantees integrity.
   Uint8List snappyFrameDecompress({bool verifyChecksums = true}) =>
       SnappyFraming.decompress(asUint8List(), verifyChecksums: verifyChecksums);
+}
+
+/// Appends Snappy streams to a blit [BytesMut] without intermediate copies.
+///
+/// Both methods reserve the worst-case output size and compress straight into
+/// the buffer's spare capacity, so building a larger message out of several
+/// compressed parts never allocates a temporary result.
+extension SnappyBytesMutExtension on BytesMut {
+  /// Appends the block-format compression of [source].
+  void snappyCompressFrom(Bytes source, {int level = 1}) {
+    final Uint8List input = source.asUint8List();
+    final Uint8List spare = spareView(Snappy.maxCompressedLength(input.length));
+    final int written = Snappy.compressInto(input, spare, level: level);
+    advance(written);
+  }
+
+  /// Appends the framing-format compression of [source].
+  void snappyFrameCompressFrom(Bytes source, {int level = 1}) {
+    final Uint8List input = source.asUint8List();
+    final Uint8List spare = spareView(
+      SnappyFraming.maxCompressedLength(input.length),
+    );
+    final int written = SnappyFraming.compressInto(input, spare, level: level);
+    advance(written);
+  }
 }

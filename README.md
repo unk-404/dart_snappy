@@ -108,10 +108,14 @@ sink.close();
 `SnappyFramingEncoder` and `SnappyFramingDecoder` are `Converter`s, so they also
 work with `Stream.transform`.
 
-### Zero-copy `Bytes`
+### Zero-copy `Bytes` and `BytesMut`
+
+`blit` owns the buffer management: `Bytes` views are compressed and decompressed
+without copying, and `BytesMut` can receive streams straight into its spare
+capacity.
 
 ```dart
-import 'package:blit/bytes.dart';
+import 'package:blit/blit_buffer.dart';
 import 'package:snappy_neo/blit.dart';
 
 final payload = Bytes.view(backingStore, offset, length); // no copy
@@ -120,7 +124,16 @@ final restored = compressed.snappyDecompress();
 
 final framed = payload.snappyFrameCompress();             // framing format
 final unpacked = framed.snappyFrameDecompress();
+
+// Compose several streams into one buffer without temporary allocations:
+final out = BytesMut();
+out.snappyCompressFrom(payload);      // block format
+out.snappyFrameCompressFrom(payload); // framing format
+final message = out.freeze();
 ```
+
+`package:blit/blit_buffer.dart` is the focused core-buffer entry; 0.2.0's
+`package:blit/blit.dart` is the companion file-IO API.
 
 ## API
 
@@ -135,6 +148,8 @@ final unpacked = framed.snappyFrameDecompress();
 | `SnappyEncoder` / `SnappyDecoder` | Reusable codecs with `encodeInto` / `decodeInto` (no allocation) |
 | `SnappyCodec` | `dart:convert` integration (its converters are private) |
 | `SnappyFraming.compress` / `decompress` | Whole-buffer framing format |
+| `SnappyFraming.maxCompressedLength(int)` | Upper bound for a framed stream |
+| `SnappyFraming.compressInto(List<int>, Uint8List)` | Frames into your buffer, returns bytes written |
 | `SnappyFramingEncoder` / `SnappyFramingDecoder` | Streaming framing conversion |
 | `SnappyFramingCodec` | `dart:convert` integration for framed streams |
 | `SnappyFraming.crc32c` / `maskChecksum` | Checksum helpers for custom chunks |

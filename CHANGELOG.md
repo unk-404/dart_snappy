@@ -1,3 +1,22 @@
+## 0.2.1
+
+- Requires `blit` 0.2.0. The integration imports the focused core-buffer entry
+  `package:blit/blit_buffer.dart` (0.2.0 turned `package:blit/blit.dart` into
+  the file-IO API).
+- New `BytesMut` helpers `snappyCompressFrom` and `snappyFrameCompressFrom`:
+  they reserve the worst case and compress straight into the buffer's spare
+  capacity, so composing a larger message out of compressed parts never
+  allocates a temporary result.
+- New `SnappyFraming.maxCompressedLength` and `SnappyFraming.compressInto`: the
+  whole framed stream is written straight into the caller's buffer instead of a
+  growable intermediate one. Measured on the corpus: +1.8-21.5% (paper-100k
+  +21.5%, fireworks +11.4%, html +4.4%) with byte-identical output. The
+  streaming encoder now assembles chunks through `BytesMut.spareView`.
+- The block-format hot loops stay on `Uint8List` + `ByteData`: blit's byte
+  types are views over the same typed data and only add indirection there, so
+  blit owns buffer management while the codec owns the byte-level loops.
+- `dart:convert`, the block/framing APIs and the wire formats are unchanged.
+
 ## 0.2.0
 
 - **Breaking:** `SnappyEncoder` and `SnappyDecoder` are no longer

@@ -15,6 +15,8 @@ library;
 import 'dart:convert';
 import 'dart:typed_data';
 
+import 'package:blit/blit_buffer.dart';
+
 import 'compress.dart' as compressor;
 import 'crc32c.dart' as crc;
 import 'decompress.dart' as decompressor;
@@ -85,6 +87,24 @@ abstract final class SnappyFraming {
   static Uint8List compress(List<int> source, {int level = 1}) =>
       compressFramed(_asBytes(source), level: level);
 
+  /// Upper bound for the size of a framed stream of [length] input bytes.
+  ///
+  /// Each chunk costs an eight-byte header plus at most its own payload, and
+  /// the stream starts with the ten-byte identifier.
+  static int maxCompressedLength(int length) {
+    final int chunks = (length + _maxChunkSize - 1) ~/ _maxChunkSize;
+    return _streamIdentifier.length + length + 12 * chunks;
+  }
+
+  /// Frames [source] into [destination] and returns the byte count.
+  ///
+  /// [destination] must hold at least [maxCompressedLength] bytes.
+  static int compressInto(
+    Uint8List source,
+    Uint8List destination, {
+    int level = 1,
+  }) => compressFramedInto(source, destination, level: level);
+
   /// Decodes a framed stream into a new [Uint8List].
   ///
   /// Throws a [FormatException] for a missing or corrupt stream identifier,
@@ -97,11 +117,69 @@ abstract final class SnappyFraming {
 
 /// Encodes [source] as a complete framed stream.
 Uint8List compressFramed(Uint8List source, {int level = 1}) {
-  final collector = _BytesCollector();
-  final sink = _FramingEncoderSink(collector, level);
-  sink.add(source);
-  sink.close();
-  return collector.take();
+  final out = Uint8List(SnappyFraming.maxCompressedLength(source.length));
+  final written = compressFramedInto(source, out, level: level);
+  return Uint8List.sublistView(out, 0, written);
+}
+
+/// Encodes [source] into [destination] and returns the byte count.
+///
+/// The whole stream is written straight into the caller's buffer: no growable
+/// intermediate buffer and no growth copies.
+int compressFramedInto(
+  Uint8List source,
+  Uint8List destination, {
+  int level = 1,
+}) {
+  final int required = SnappyFraming.maxCompressedLength(source.length);
+  if (destination.length < required) {
+    throw ArgumentError.value(
+      destination.length,
+      'destination',
+      'must be at least $required bytes for ${source.length} input bytes',
+    );
+  }
+  final Uint8List scratch = Uint8List(
+    maxCompressedLength(_maxChunkSize) + outputSlop,
+  );
+  destination.setRange(0, _streamIdentifier.length, _streamIdentifier);
+  var op = _streamIdentifier.length;
+  for (var start = 0; start < source.length; start += _maxChunkSize) {
+    final int end = start + _maxChunkSize <= source.length
+        ? start + _maxChunkSize
+        : source.length;
+    final int length = end - start;
+    final int checksum = crc.maskChecksum(crc.crc32cRange(source, start, end));
+    final Uint8List slice = Uint8List.sublistView(source, start, end);
+    final int compressedLength = compressor.compressBlockInto(
+      slice,
+      scratch,
+      level: level,
+    );
+    final int chunkLength;
+    if (compressedLength < length - length ~/ 8) {
+      destination[op] = _chunkCompressed;
+      chunkLength = 4 + compressedLength;
+    } else {
+      destination[op] = _chunkUncompressed;
+      chunkLength = 4 + length;
+    }
+    destination[op + 1] = chunkLength & 0xFF;
+    destination[op + 2] = (chunkLength >>> 8) & 0xFF;
+    destination[op + 3] = (chunkLength >>> 16) & 0xFF;
+    destination[op + 4] = checksum & 0xFF;
+    destination[op + 5] = (checksum >>> 8) & 0xFF;
+    destination[op + 6] = (checksum >>> 16) & 0xFF;
+    destination[op + 7] = (checksum >>> 24) & 0xFF;
+    final int payload = chunkLength - 4;
+    if (destination[op] == _chunkCompressed) {
+      destination.setRange(op + 8, op + 8 + payload, scratch);
+    } else {
+      destination.setRange(op + 8, op + 8 + payload, source, start);
+    }
+    op += 8 + payload;
+  }
+  return op;
 }
 
 /// Decodes a complete framed stream.
@@ -412,21 +490,26 @@ final class _FramingEncoderSink implements ByteConversionSink {
     // Same policy as the reference implementation: only pay for compression
     // when it saves at least an eighth of the payload.
     final int threshold = length - length ~/ 8;
-    final _GrowableBytes chunk;
-    if (compressedLength < threshold) {
-      chunk = _GrowableBytes(8 + compressedLength)
-        ..addByte(_chunkCompressed)
-        ..addUint24(4 + compressedLength)
-        ..addUint32(checksum)
-        ..addBytes(_scratch, 0, compressedLength);
+    final bool compressed = compressedLength < threshold;
+    final int payload = compressed ? compressedLength : length;
+    final BytesMut chunk = BytesMut(8 + payload);
+    final Uint8List view = chunk.spareView(8 + payload);
+    final int chunkLength = 4 + payload;
+    view[0] = compressed ? _chunkCompressed : _chunkUncompressed;
+    view[1] = chunkLength & 0xFF;
+    view[2] = (chunkLength >>> 8) & 0xFF;
+    view[3] = (chunkLength >>> 16) & 0xFF;
+    view[4] = checksum & 0xFF;
+    view[5] = (checksum >>> 8) & 0xFF;
+    view[6] = (checksum >>> 16) & 0xFF;
+    view[7] = (checksum >>> 24) & 0xFF;
+    if (compressed) {
+      view.setRange(8, 8 + payload, _scratch);
     } else {
-      chunk = _GrowableBytes(8 + length)
-        ..addByte(_chunkUncompressed)
-        ..addUint24(4 + length)
-        ..addUint32(checksum)
-        ..addBytes(source, start, end);
+      view.setRange(8, 8 + payload, source, start);
     }
-    _out.add(chunk.take());
+    chunk.advance(8 + payload);
+    _out.add(chunk.freeze().asUint8List());
   }
 }
 
@@ -594,55 +677,6 @@ void _verifyChecksum(Uint8List data, int start, int length, int stored) {
 // buffers
 // ---------------------------------------------------------------------------
 
-/// Growable byte buffer with the writes the framing format needs.
-final class _GrowableBytes {
-  _GrowableBytes(int capacity)
-    : _buffer = Uint8List(capacity < 16 ? 16 : capacity);
-
-  Uint8List _buffer;
-  int _length = 0;
-
-  void addByte(int value) {
-    _ensure(1);
-    _buffer[_length++] = value & 0xFF;
-  }
-
-  void addUint24(int value) {
-    _ensure(3);
-    _buffer[_length++] = value & 0xFF;
-    _buffer[_length++] = (value >>> 8) & 0xFF;
-    _buffer[_length++] = (value >>> 16) & 0xFF;
-  }
-
-  void addUint32(int value) {
-    _ensure(4);
-    _buffer[_length++] = value & 0xFF;
-    _buffer[_length++] = (value >>> 8) & 0xFF;
-    _buffer[_length++] = (value >>> 16) & 0xFF;
-    _buffer[_length++] = (value >>> 24) & 0xFF;
-  }
-
-  void addBytes(Uint8List source, int start, int end) {
-    final int count = end - start;
-    if (count <= 0) return;
-    _ensure(count);
-    _buffer.setRange(_length, _length + count, source, start);
-    _length += count;
-  }
-
-  Uint8List take() => Uint8List.sublistView(_buffer, 0, _length);
-
-  void _ensure(int extra) {
-    final int needed = _length + extra;
-    if (needed <= _buffer.length) return;
-    var capacity = _buffer.length * 2;
-    if (capacity < needed) capacity = needed;
-    final next = Uint8List(capacity);
-    next.setRange(0, _length, _buffer);
-    _buffer = next;
-  }
-}
-
 /// FIFO byte buffer used to assemble chunks from arbitrary input slices.
 ///
 /// Consumed bytes advance a start index instead of shifting the buffer, so
@@ -694,22 +728,6 @@ final class _ChunkBuffer {
     _start = 0;
     _length = 0;
   }
-}
-
-/// Collects the output of a chunked conversion into one buffer.
-final class _BytesCollector implements Sink<List<int>> {
-  final _GrowableBytes _bytes = _GrowableBytes(1024);
-
-  @override
-  void add(List<int> data) {
-    final Uint8List bytes = data is Uint8List ? data : Uint8List.fromList(data);
-    _bytes.addBytes(bytes, 0, bytes.length);
-  }
-
-  @override
-  void close() {}
-
-  Uint8List take() => _bytes.take();
 }
 
 Uint8List _asBytes(List<int> source) =>
