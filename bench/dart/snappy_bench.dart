@@ -54,6 +54,10 @@ void main() {
   late final Map<String, Uint8List> corpus;
   late final Map<String, Uint8List> compressed;
   late final Map<String, Uint8List> framed;
+  late final Map<String, Uint8List> encodeScratch;
+  late final Map<String, Uint8List> decodeScratch;
+  const encoder = SnappyEncoder();
+  const decoder = SnappyDecoder();
 
   setUpAll(() {
     corpus = _readCorpus();
@@ -64,6 +68,17 @@ void main() {
     framed = {
       for (final entry in corpus.entries)
         entry.key: SnappyFraming.compress(entry.value),
+    };
+    // Caller-owned buffers, reused across iterations: this is the fast path a
+    // server would use and the like-for-like comparison with the Rust oracle,
+    // which also reuses its buffers.
+    encodeScratch = {
+      for (final entry in corpus.entries)
+        entry.key: Uint8List(Snappy.maxCompressedLength(entry.value.length)),
+    };
+    decodeScratch = {
+      for (final entry in corpus.entries)
+        entry.key: Uint8List(entry.value.length),
     };
     // Cheap one-time sanity check: the decompress benchmarks must restore the
     // exact corpus bytes the compress benchmarks started from.
@@ -90,7 +105,7 @@ void main() {
       benchmark(
         name,
         () {
-          _sink = Snappy.compress(corpus[name]!);
+          _sink = encoder.encodeInto(corpus[name]!, encodeScratch[name]!);
         },
         minDuration: _minDuration,
         warmupMinDuration: _warmupMinDuration,
@@ -103,7 +118,7 @@ void main() {
       benchmark(
         name,
         () {
-          _sink = Snappy.decompress(compressed[name]!);
+          _sink = decoder.decodeInto(compressed[name]!, decodeScratch[name]!);
         },
         minDuration: _minDuration,
         warmupMinDuration: _warmupMinDuration,

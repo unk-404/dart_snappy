@@ -1,3 +1,28 @@
+## 0.2.0
+
+- **Breaking:** `SnappyEncoder` and `SnappyDecoder` are no longer
+  `dart:convert` converters. They are now stateful, allocation-free block
+  codecs: `encode`, `encodeInto`, `decode`, `decodeInto`,
+  `uncompressedLength`. The `dart:convert` integration lives on
+  `SnappyCodec`, whose converters are private implementation details.
+- Decode fast path rewritten: LZ77 copies now use `Uint8List.setRange` (a
+  memmove intrinsic) instead of 4/8-byte word stores. Non-overlapping copies
+  are a single memmove; run-length copies (offset < length) seed the pattern
+  and then double it, so every individual move is non-overlapping as well.
+  Measured in-process (interleaved A/B): geo +42%, html +29-37%, paper +30%,
+  alice +13-31%, kppkn +1-7%.
+- `decodeInto` avoids the output allocation entirely, which is the dominant
+  cost for literal-heavy input (paper-100k +60%, fireworks +166%).
+- Benchmarks now measure the allocation-free path (`encodeInto` /
+  `decodeInto` with caller-owned buffers) on both the Dart and the Rust
+  reference sides, so the chart compares codec throughput rather than
+  allocation behaviour.
+- Framing: chunk decoding reuses the same direct-into-buffer decoder.
+- Documented performance versus native Snappy: decode reaches 64-127% of a
+  C++ 1.3.1 build on text and copy-heavy data (33-69% on literal-heavy data),
+  encode reaches 15-42%. A pure Dart encoder cannot match native code
+  instruction-for-instruction; see the README for the measured ceilings.
+
 ## 0.1.2
 
 - Compression level 2: `level: 2` on `Snappy.compress`, `Snappy.compressInto`,

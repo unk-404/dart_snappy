@@ -394,6 +394,26 @@ int _compressBlockDoubleHash(
 @pragma('vm:prefer-inline')
 int _matchLength(ByteData data, int a, int b, int limit) {
   final int start = b;
+  // Long matches (tables, text runs) are common enough that comparing eight
+  // bytes per iteration is worth the extra branch: the first four-byte compare
+  // still resolves the short matches that dominate text.
+  while (b + 8 <= limit) {
+    final int low =
+        (data.getUint32(a, Endian.little) ^ data.getUint32(b, Endian.little)) &
+        0xFFFFFFFF;
+    if (low != 0) {
+      return (b - start) + (_lowestSetBit(low) >> 3);
+    }
+    final int high =
+        (data.getUint32(a + 4, Endian.little) ^
+            data.getUint32(b + 4, Endian.little)) &
+        0xFFFFFFFF;
+    if (high != 0) {
+      return (b - start) + 4 + (_lowestSetBit(high) >> 3);
+    }
+    a += 8;
+    b += 8;
+  }
   while (b + 4 <= limit) {
     final int difference =
         (data.getUint32(a, Endian.little) ^ data.getUint32(b, Endian.little)) &

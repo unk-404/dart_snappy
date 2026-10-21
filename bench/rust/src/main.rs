@@ -379,16 +379,19 @@ fn cmd_bench(args: &[String]) -> Result<(), ()> {
             eprintln!("compress failed for {name}: {error}");
         })?;
 
+        // Reused output buffer, matching the Dart benchmark's `encodeInto` /
+        // `decodeInto` fast path.
+        let mut scratch = vec![0u8; snap::raw::max_compress_len(source.len())];
         for _ in 0..5 {
-            black_box(encoder.compress_vec(black_box(&source)).unwrap());
-            black_box(decoder.decompress_vec(black_box(&compressed)).unwrap());
+            black_box(encoder.compress(black_box(&source), &mut scratch).unwrap());
+            black_box(decoder.decompress(black_box(&compressed), &mut scratch).unwrap());
         }
 
         let compress = measure(|| {
-            black_box(encoder.compress_vec(black_box(&source)).unwrap());
+            black_box(encoder.compress(black_box(&source), &mut scratch).unwrap());
         });
         let decompress = measure(|| {
-            black_box(decoder.decompress_vec(black_box(&compressed)).unwrap());
+            black_box(decoder.decompress(black_box(&compressed), &mut scratch).unwrap());
         });
         let (compress_mib, compress_rme) = rate(compress, source.len());
         let (decompress_mib, decompress_rme) = rate(decompress, source.len());

@@ -210,14 +210,7 @@ int _decodeBlockAt(
         op = end;
         continue;
       }
-      copyFromOutput(
-        destination,
-        destinationData,
-        op,
-        copyOffset,
-        length,
-        writeLimit,
-      );
+      copyFromOutput(destination, op, copyOffset, length);
       op = end;
       continue;
     }
@@ -237,14 +230,7 @@ int _decodeBlockAt(
         op = end;
         continue;
       }
-      copyFromOutput(
-        destination,
-        destinationData,
-        op,
-        copyOffset,
-        length,
-        writeLimit,
-      );
+      copyFromOutput(destination, op, copyOffset, length);
       op = end;
       continue;
     }
@@ -253,14 +239,7 @@ int _decodeBlockAt(
       op = end;
       continue;
     }
-    copyFromOutput(
-      destination,
-      destinationData,
-      op,
-      copyOffset,
-      length,
-      writeLimit,
-    );
+    copyFromOutput(destination, op, copyOffset, length);
     op = end;
   }
 
@@ -274,161 +253,22 @@ int _decodeBlockAt(
 
 /// Copies [length] bytes from [offset] bytes before [op] to [op] in [output].
 ///
-/// This is the LZ77 copy: source and destination may overlap, in which case the
-/// pattern repeats (run-length encoding). Copies are performed on the smallest
-/// already-written granule that is guaranteed to be complete, so the source
-/// never overlaps the bytes being produced by the same store; trailing bytes
-/// may be over-written up to [writeLimit] when spare capacity allows.
-void copyFromOutput(
-  Uint8List output,
-  ByteData data,
-  int op,
-  int offset,
-  int length,
-  int writeLimit,
-) {
+/// This is the LZ77 copy. When the source and destination do not overlap, one
+/// `setRange` (a memmove intrinsic) beats any word-by-word loop by a wide
+/// margin. When they do overlap (run-length encoding), the copy seeds the
+/// pattern and then doubles it; every individual move is non-overlapping, so
+/// each one is still a plain memmove.
+void copyFromOutput(Uint8List output, int op, int offset, int length) {
   final int source = op - offset;
-
-  if (offset >= 16) {
-    var s = source;
-    var d = op;
-    var remaining = length;
-    while (remaining >= 16) {
-      data.setUint32(d, data.getUint32(s, Endian.little), Endian.little);
-      data.setUint32(
-        d + 4,
-        data.getUint32(s + 4, Endian.little),
-        Endian.little,
-      );
-      data.setUint32(
-        d + 8,
-        data.getUint32(s + 8, Endian.little),
-        Endian.little,
-      );
-      data.setUint32(
-        d + 12,
-        data.getUint32(s + 12, Endian.little),
-        Endian.little,
-      );
-      d += 16;
-      s += 16;
-      remaining -= 16;
-    }
-    if (remaining == 0) return;
-    if (remaining >= 8) {
-      data.setUint32(d, data.getUint32(s, Endian.little), Endian.little);
-      data.setUint32(
-        d + 4,
-        data.getUint32(s + 4, Endian.little),
-        Endian.little,
-      );
-      d += 8;
-      s += 8;
-      remaining -= 8;
-    }
-    if (remaining == 0) return;
-    if (d + 8 <= writeLimit) {
-      data.setUint32(d, data.getUint32(s, Endian.little), Endian.little);
-      data.setUint32(
-        d + 4,
-        data.getUint32(s + 4, Endian.little),
-        Endian.little,
-      );
-      return;
-    }
-    while (remaining > 0) {
-      output[d++] = output[s++];
-      remaining--;
-    }
+  if (offset >= length) {
+    output.setRange(op, op + length, output, source);
     return;
   }
-
-  if (offset >= 8) {
-    var s = source;
-    var d = op;
-    var remaining = length;
-    while (remaining >= 8) {
-      data.setUint32(d, data.getUint32(s, Endian.little), Endian.little);
-      data.setUint32(
-        d + 4,
-        data.getUint32(s + 4, Endian.little),
-        Endian.little,
-      );
-      d += 8;
-      s += 8;
-      remaining -= 8;
-    }
-    if (remaining == 0) return;
-    if (d + 8 <= writeLimit) {
-      data.setUint32(d, data.getUint32(s, Endian.little), Endian.little);
-      data.setUint32(
-        d + 4,
-        data.getUint32(s + 4, Endian.little),
-        Endian.little,
-      );
-      return;
-    }
-    while (remaining > 0) {
-      output[d++] = output[s++];
-      remaining--;
-    }
-    return;
-  }
-
-  if (offset >= 4) {
-    var s = source;
-    var d = op;
-    var remaining = length;
-    while (remaining >= 4) {
-      data.setUint32(d, data.getUint32(s, Endian.little), Endian.little);
-      d += 4;
-      s += 4;
-      remaining -= 4;
-    }
-    if (remaining == 0) return;
-    if (d + 4 <= writeLimit) {
-      data.setUint32(d, data.getUint32(s, Endian.little), Endian.little);
-      return;
-    }
-    while (remaining > 0) {
-      output[d++] = output[s++];
-      remaining--;
-    }
-    return;
-  }
-
-  if (offset == 1) {
-    output.fillRange(op, op + length, output[source]);
-    return;
-  }
-
-  // Offsets 2 and 3 cannot be copied in 4-byte granules, because the granule
-  // would read bytes it is about to produce. Materialise one whole multiple of
-  // 4 bytes of the pattern, then double it with aligned word copies.
-  final int period = offset == 2 ? 4 : 12;
-  var written = 0;
-  final int seedLength = length < period ? length : period;
-  while (written < seedLength) {
-    output[op + written] = output[source + written];
-    written++;
-  }
-  if (length <= period) return;
+  var written = offset;
+  output.setRange(op, op + written, output, source);
   while (written < length) {
     final int chunk = written < length - written ? written : length - written;
-    final int d = op + written;
-    var i = 0;
-    while (i + 4 <= chunk) {
-      data.setUint32(
-        d + i,
-        data.getUint32(op + i, Endian.little),
-        Endian.little,
-      );
-      i += 4;
-    }
-    while (i < chunk) {
-      output[d + i] = output[op + i];
-      i++;
-    }
+    output.setRange(op + written, op + written + chunk, output, op);
     written += chunk;
   }
 }

@@ -67,10 +67,31 @@ void main() {
       const codec = SnappyCodec(level: 2);
       expect(codec.encode(source), Snappy.compress(source, level: 2));
       expect(
-        const SnappyEncoder(level: 2).convert(source),
+        const SnappyEncoder(level: 2).encode(source),
         Snappy.compress(source, level: 2),
       );
       expect(codec.decode(codec.encode(source)), source);
+    });
+
+    test('the codec objects encode and decode without allocating', () {
+      final source = textBytes(30000);
+      final encoded = Uint8List(Snappy.maxCompressedLength(source.length));
+      final written = const SnappyEncoder().encodeInto(source, encoded);
+      final compressed = Uint8List.sublistView(encoded, 0, written);
+      expect(compressed, Snappy.compress(source));
+
+      final decoded = Uint8List(source.length);
+      expect(
+        const SnappyDecoder().decodeInto(compressed, decoded),
+        source.length,
+      );
+      expect(decoded, source);
+      expect(
+        const SnappyDecoder().uncompressedLength(compressed),
+        source.length,
+      );
+      expect(const SnappyDecoder().decode(compressed), source);
+      expect(const SnappyEncoder().encode(source), compressed);
     });
   });
   group('uncompressedLength', () {
